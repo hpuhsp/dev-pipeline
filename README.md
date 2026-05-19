@@ -1,6 +1,11 @@
-<p align="right"><sub><a href="README_zh.md">中文</a></sub></p>
-
 # Dev Pipeline
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/hpuhsp/dev-pipeline.svg)](https://github.com/hpuhsp/dev-pipeline/stargazers)
+
+[中文版](README_zh.md) | English
+
+---
 
 Multi-step code delivery skill pack for Claude Code and other AI Agents.
 

@@ -1,6 +1,11 @@
-<p align="right"><sub><a href="README.md">English</a></sub></p>
-
 # Dev Pipeline · 开发流水线
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/hpuhsp/dev-pipeline.svg)](https://github.com/hpuhsp/dev-pipeline/stargazers)
+
+[English](README.md) | 中文版
+
+---
 
 适用于 Claude Code 及其他 AI Agent 的多步骤代码交付技能包。
 
