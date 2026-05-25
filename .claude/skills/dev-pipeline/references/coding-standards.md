@@ -2,6 +2,8 @@
 
 各语言/平台的权威编码规范参考。审查时根据项目技术栈自动匹配对应的规范进行检查。
 
+> **Token-efficient loading**: This file covers 6 languages (~20KB). When loading, **read only the section matching the detected tech stack** from Phase 0. For example, for a TypeScript React project, read only "JavaScript / TypeScript" + "React" + "Web 前端通用". Skip Java, Kotlin, Python, and UTS sections.
+
 ---
 
 ## Java
@@ -16,11 +18,14 @@
 - 常量：CONSTANT_CASE（`MAX_RETRY_COUNT`）
 - 抽象类以 `Abstract`/`Base` 开头；异常类以 `Exception` 结尾；测试类以 `Test` 结尾
 - POJO 中布尔变量不加 `is` 前缀（会导致序列化框架问题）
+- POJO 命名后缀约定：`DTO`（数据传输）、`VO`（视图）、`BO`（业务对象）、`Query`/`Criteria`（查询参数）、`DO`（数据对象）
 - 包名全小写，点分隔，禁止下划线
 
 **代码结构**
+- `@Override` 注解强制：**所有覆写方法必须加 `@Override` 注解**（P3C 强制）
 - 单个方法不超过 80 行
 - `if`/`for`/`while` 必须使用大括号（即使只有一行）
+- `switch` 必须包含 `default` 分支（即使不做任何操作）
 - 不允许 `switch` case 穿透（必须 break 或注释 `// fall through`）
 - 不能使用已废弃的类或方法
 - `equals()` 调用时将常量/确定值放前面：`"test".equals(str)` 防 NPE
@@ -28,14 +33,19 @@
 **集合与并发**
 - `ArrayList` 初始化指定容量：`new ArrayList<>(expectedSize)`
 - 不要在 `foreach` 中 `remove`（应使用 `Iterator`）
+- 方法返回空集合/空数组而非 `null`（避免调用方 NPE）
 - 线程安全的类优先使用 `java.util.concurrent` 下的
-- `SimpleDateFormat` 是线程不安全的，使用 `DateTimeFormatter` 替代
 - 使用 `ThreadPoolExecutor` 而非 `Executors` 创建线程池
+
+**日期与字符串处理**
+- **必须使用 `java.time` API**（`LocalDate`, `LocalDateTime`, `Instant` 等），禁止使用 `java.util.Date`、`java.sql.Date`、`SimpleDateFormat`（线程不安全且已过时）
+- `SimpleDateFormat` 是线程不安全的，使用 `DateTimeFormatter` 替代
+- 循环内字符串拼接必须使用 `StringBuilder` 的 `append()` 方法
 
 **面向对象**
 - 重写 `equals()` 必须重写 `hashCode()`
 - 禁止在构造方法中加入业务逻辑（应放 `init()` 中）
-- 类成员变量不应声明为 `protected`（除非确实需要子类访问）
+- 非 static 成员变量与子类共享时必须声明为 `protected`（P3C 强制）；仅本类使用则用 `private`
 - 接口的方法签名不要加 `public` 修饰符
 
 **MySQL**
@@ -102,15 +112,16 @@
 
 **Pattern Matching（模式匹配）**
 - `instanceof` 模式匹配（Java 16+）：`if (obj instanceof String s)` 省去手动强制转换
-- `switch` 模式匹配（Java 17+）：支持类型匹配 + 守卫条件
+- `switch` 模式匹配（**Java 21 正式发布**，Java 17-20 需 `--enable-preview`）：
   ```java
   switch (obj) {
-      case Integer i && i > 0 -> "positive integer";
+      case Integer i when i > 0 -> "positive integer";  // Java 21 final syntax
       case Integer i            -> "non-positive integer";
       case String s             -> s.toUpperCase();
       default                   -> "unknown";
   }
   ```
+  注意：Java 17-20 预览版使用 `&&` 替代 `when`
 
 **Switch 表达式（Java 14+）**
 - 使用 `->` 箭头语法，省略 `break`
@@ -234,6 +245,30 @@
 - 资源文件命名：`activity_`、`fragment_`、`item_`、`dialog_` 前缀
 - 使用 `@StringRes`、`@ColorRes` 等资源注解
 
+### Jetpack Compose（现代 Android UI）
+
+- `@Composable` 函数：PascalCase 命名，不返回任何值（返回 Unit）
+- 状态提升（State Hoisting）：状态向上提升到调用方，`@Composable` 函数接收 `value: T` + `onValueChange: (T) -> Unit` 而非内部持有 `var`
+- `remember`：缓存跨重组的数据；`rememberSaveable` 用于进程死亡后恢复
+- 副作用管理：
+  - `LaunchedEffect(key)`：key 变化时重启协程，自动在离开组合时取消
+  - `DisposableEffect(key)`：需要手动清理资源时（如注册/注销监听器）
+  - `rememberCoroutineScope()`：需要用户交互触发协程时（如点击事件）
+  - 禁止在 `@Composable` 函数中直接启动协程（使用上述 API）
+- Modifier 顺序敏感：先声明的在外层，影响布局和事件传播
+- 禁止在 Compose 中使用 `GlobalScope`（使用 Compose 感知的协程作用域）
+
+### Kotlin 协程（Coroutines）
+
+- 禁止使用 `GlobalScope`：使用 `viewModelScope`（Android ViewModel）、`lifecycleScope`（Lifecycle 拥有者）、或自行创建的 `CoroutineScope` + `SupervisorJob()`
+- 结构化并发：父协程取消时子协程自动取消
+- Dispatchers 选择：
+  - `Dispatchers.Main` — UI 操作、LiveData/StateFlow 更新
+  - `Dispatchers.IO` — 网络请求、数据库操作、文件 I/O
+  - `Dispatchers.Default` — CPU 密集型计算
+- 用 `supervisorScope` 隔离子协程失败（一个子协程失败不取消兄弟）
+- 异常处理：顶层协程用 `CoroutineExceptionHandler`，内部用 `try/catch`
+
 ### detekt（Kotlin 静态分析）
 
 - `EmptyFunctionBlock` — 空函数体需注释说明
@@ -256,13 +291,16 @@
 
 **格式**
 - 缩进：2 空格
+- 行宽：100 字符
 - 分号：必须
 - 字符串：单引号 `'`
 - 结尾逗号：`{ a: 1, b: 2, }`
 
 **最佳实践**
+- 使用 `const` 默认声明变量，需要重新赋值时用 `let`，**禁止 `var`**
 - 使用 `===` 而非 `==`
 - 使用字面量创建对象和数组：`{}`、`[]`
+- 优先使用对象解构获取属性：`const { name, age } = user`（Airbnb）
 - 链式调用超过 2 个方法时换行
 - 禁止未使用的变量（`no-unused-vars`）
 - 禁止在循环中定义函数
@@ -273,9 +311,10 @@
 - 接口名不加 `I` 前缀
 - 类型断言使用 `as Type`（不用 `<Type>`）
 - 优先 interface 而非 type（除非需要联合类型）
-- 函数返回值必须声明类型
-- 禁止 `any`（除非有明确注释说明原因）
-- `@ts-ignore` 必须有注释说明
+- 建议函数返回值声明类型（复杂类型时必须，简单类型由作者判断 — Google TS Style 不强制所有函数）
+- 避免使用 `any`（优先 `unknown` 或具体类型；Google TS Style 不建议使用）
+- **禁止使用 `@ts-ignore`**（Google TS Style 完全禁止，包括 `@ts-expect-error` 和 `@ts-nocheck`；仅单元测试中可例外使用 `@ts-expect-error`）
+- 推荐启用 `strict: true`（包括 `strictNullChecks`），这是 TypeScript 代码质量的基础
 - 使用 `const enum` 或 string union 替代魔法字符串
 - 善用 `readonly` 和 `as const`
 
@@ -283,8 +322,8 @@
 
 - 组件名：PascalCase；组件文件使用同名
 - Hook 以 `use` 开头
-- 事件处理函数以 `handle` 开头：`handleClick`
-- 传递事件处理 props 以 `on` 开头：`onClick`
+- 事件处理函数以 `handle` 开头（社区广泛采用的惯例）：`handleClick`
+- 传递事件处理 props 以 `on` 开头（React 官方）：`onClick`
 - 不要在 `useEffect` 中遗漏依赖项
 - 用 `key` prop 时使用稳定唯一值（不用 index）
 - 避免不必要的 state（能从 props/其他 state 计算出的就用 `useMemo`）
@@ -314,11 +353,13 @@
 - 属性值始终加引号（单引或双引，全项目统一）
 
 **Composition API 额外规则（`<script setup>`）**
-- `defineProps` 使用泛型或运行时声明（不用纯类型推断丢失校验信息）
+- `<script setup>` 是 Vue 3 官方推荐的默认写法，所有新组件应优先使用
+- `defineProps`：TypeScript 项目推荐泛型声明 `defineProps<{...}>()`（配合 `withDefaults` 设置默认值）；非 TypeScript 项目使用运行时声明
 - `defineEmits` 必须声明事件签名：`const emit = defineEmits<{ update: [value: string] }>()`
+- `defineModel`（Vue 3.4+）：`const modelValue = defineModel<string>()` 替代传统 v-model props+emit 双定义
 - `defineExpose` 只暴露必要项，避免过度暴露内部状态
 - `watch`/`watchEffect` 在不再需要时 `onUnmounted` 中停止（手动创建的 watcher）
-- `ref` vs `reactive`：基本类型用 `ref`，对象优先 `reactive`（或用 `ref` + `reactive` 包装）
+- 响应式 API：**推荐统一使用 `ref`**（`ref` 支持所有类型且无解构陷阱；`reactive` 有限制：不可重新赋值、解构丢失响应性）
 
 **禁止模式**
 - 禁止在 `computed` 中执行副作用（API 调用、DOM 操作、状态变更）
@@ -427,8 +468,11 @@
 **格式**
 - 缩进：4 空格（禁止 tab）
 - 列宽：79 字符（docstring/注释：72）
-- import 分行，标准库 → 第三方 → 本地
+- import 分行，标准库 → 第三方 → 本地（禁止 `from module import *` 通配符导入）
 - 顶层函数/类之间空 2 行；方法之间空 1 行
+- 禁止尾部空格；二元运算符两侧各 1 空格；括号内不加空格
+- 禁止单行复合语句（`if x: do_something()` 必须分行）
+- 行续优先使用括号内隐式续行，而非反斜杠 `\`
 
 **规则**
 - 比较用 `is`/`is not`（None 比较）而非 `==`
@@ -436,6 +480,7 @@
 - 函数调用时等号两边不加空格：`func(a=1)`
 - 逗号后面加空格：`[1, 2, 3]`
 - 可变默认参数的陷阱：`def f(items=[])` → `def f(items=None)`
+- 注释作为完整句子：首字母大写，以句号结尾；行内注释与代码至少 2 空格
 
 ### PEP 257 — Docstring Conventions
 
@@ -460,11 +505,13 @@
 
 ### W3C / WCAG 2.1 AA（可访问性）
 
+- **语义化 HTML**：使用 `<nav>`, `<main>`, `<article>`, `<section>`, `<header>`, `<footer>`, `<aside>` 替代 `<div>`（帮助屏幕阅读器理解页面结构）
 - 所有图片必须有 `alt` 属性
 - 表单控件必须有关联 `label`
 - 颜色对比度 ≥ 4.5:1（正文）/ 3:1（大号文本）
 - 不使用仅颜色区分信息
-- 键盘可导航（Tab、Enter、Esc）
+- 键盘可导航（Tab、Enter、Esc）；Tab 顺序合理（避免 `tabindex > 0`）
+- 可聚焦元素必须有可见的 `:focus-visible` 样式（不要 `outline: none` 而不提供替代）
 - `aria-label` / `aria-describedby` 用于非文本控件
 
 ### CSS / 样式

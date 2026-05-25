@@ -3,24 +3,25 @@
 当调用方拥有 Agent 工具时，使用这 3 个 prompt 在一条消息中启动 3 个并行审查 Agent。
 每个 Agent 独立审查同一份 diff，聚焦不同维度。
 
+> **Token efficiency**: Each agent's prompt is self-contained (no shared context between parallel agents). For small diffs (≤50 lines), prefer the 1B serial fallback to save ~4x token cost. When loading `references/coding-standards.md` for Agent 3, only read the section matching the detected tech stack.
+
 ---
 
 ## 使用方式
 
-**必须一次消息同时启动 3 个 Agent：**
+**必须一次消息同时启动 3 个 Agent**，每个 Agent 的 `prompt` 参数按以下方式构造：
 
+**Step 1**: 读取下方对应 Agent 的模板（如 Agent 1 的模板是 "You are a senior security engineer..." 到 "DIFF:" 之间的全部内容）
+**Step 2**: 将模板中的 `{detected_language_framework}` 替换为 Phase 0 检测到的技术栈描述（如 "TypeScript React project with Jest"）
+**Step 3**: 将模板中的 `{git_diff}` 替换为 `git diff` + `git diff --staged` 的实际输出
+**Step 4**: 使用替换后的完整文本作为 Agent 调用的 `prompt` 参数
+
+Example prompt construction:
 ```
-Agent(subagent_type="general-purpose", description="Security+Correctness review")
-  prompt: <Agent 1 的完整 prompt + diff>
-
-Agent(subagent_type="general-purpose", description="Performance+Efficiency review")
-  prompt: <Agent 2 的完整 prompt + diff>
-
-Agent(subagent_type="general-purpose", description="Maintainability+Style review")
-  prompt: <Agent 3 的完整 prompt + diff>
+prompt = template
+  .replace("{detected_language_framework}", "Python project with pytest")
+  .replace("{git_diff}", actualDiff)
 ```
-
-Agent 的 prompt = 下方对应 Agent 的完整内容 + 实际的 git diff 内容 + 技术栈上下文（如 "This is a TypeScript React project"）。
 
 ---
 
@@ -85,7 +86,10 @@ Confidence guide:
 - 9-10: Concrete exploit or crash demonstrated from reading the code
 - 7-8: High-confidence pattern match, very likely real
 - 5-6: Suspicious but could be false positive — state caveat
-- <5: Suppress unless P0 severity
+- 3-4: Low confidence, speculative — still report (aggregator will move to appendix)
+- 1-2: Extremely speculative — still report (aggregator will suppress)
+
+Report ALL findings regardless of confidence level. The pipeline aggregator handles confidence-based filtering.
 
 Only report real issues. If clean: "No issues found. SCORE: 10/10"
 
@@ -187,52 +191,22 @@ You are a senior software architect and code quality reviewer. Review the follow
 
 ## Coding Standards Compliance
 
-Check against authoritative standards for the detected language. For detailed rules, consult `references/coding-standards.md`. Key rules by language:
+**Read `references/coding-standards.md`**, locate the section for the detected language/framework, and check the diff against every mandatory rule listed there. Key categories:
 
-### Java (Alibaba P3C + Google Java Style)
-- Class names UpperCamelCase; methods lowerCamelCase; constants CONSTANT_CASE
-- Single-line `if`/`for`/`while` MUST use braces
-- No `switch` case fall-through without comment
-- `equals()`: constant first → `"test".equals(str)`, not `str.equals("test")`
-- `ArrayList` constructors should specify capacity
-- No `SELECT *`; no `System.out` in production; no `SimpleDateFormat` (use `DateTimeFormatter`)
-- Override `hashCode()` when overriding `equals()`
-- No deprecated classes/methods; no `protected` fields without reason
-- Prohibit `Executors` for thread pools → use `ThreadPoolExecutor`
+| Language | Standards Source | What to check |
+|----------|-----------------|---------------|
+| Java | Alibaba P3C + Google Java Style + Java 17+ | Naming, braces, equals(), ArrayList capacity, Optional, Streams, Records, immutability, null safety, domain exceptions |
+| Kotlin/Android | Android Kotlin Style Guide + detekt | val/var, !! avoidance, when usage, data classes, Compose conventions, coroutine patterns |
+| JS/TS | Airbnb JS + Google TS Style | ===, const/let, no any, interface over type, as Type, return type annotations |
+| React | React conventions | PascalCase components, use/handle prefixes, useEffect deps, key prop, no unnecessary state |
+| Vue 3 | Vue Style Guide Priority A/B/C | Multi-word names, detailed props, v-for :key, no v-if+v-for, data as function, Composition API |
+| uni-app / UTS | uni-app / UTS conventions | <view>/<text> components, rpx units, conditional compilation, no browser globals, no v-html |
+| Python | PEP 8 + PEP 257 + Google Python Style | snake_case, 4-space, is None, no mutable defaults, with statements, f-strings, type annotations |
+| Web/CSS | WCAG 2.1 AA + BEM | alt attributes, label associations, color contrast, keyboard navigation, no !important |
 
-### Kotlin / Android
-- Prefer `val` over `var`; avoid `!!` non-null assertion
-- Use `when` over long `if-else if` chains
-- Prefer data classes for pure data; extension functions over util classes
-- Android: No parameterized constructors in Activity/Fragment
-- Android: UI on main thread; long ops on background thread
+Violations of mandatory standards → BLOCKER. Violations of recommended/pedagogical standards → WARNING.
 
-### JavaScript / TypeScript (Airbnb + Google TS)
-- Use `===` not `==`; use `const` by default, `let` when needed, never `var`
-- No `any` without documented reason; use `as Type` not `<Type>`
-- Prefer interface over type (unless union); interface names no `I` prefix
-- React: PascalCase components; hooks start with `use`; handlers start with `handle`
-- React: List `key` uses stable unique ID (not index); no missing useEffect deps
-- Vue 3: Multi-word component names; detailed prop definitions (not `props: ['x']`)
-- Vue 3: `v-for` with `:key`; NEVER `v-if` + `v-for` on same element
-- Vue 3: No side effects in computed; component `data()` must be a function
-- Vue 3 SFC order: template → script → style (scoped); props camelCase in JS, kebab-case in template
-- uni-app: Use `<view>`/`<text>`/`<image>` over HTML tags; `rpx` for sizing; `uni.*` APIs not browser APIs
-- uni-app: Conditional compile (`#ifdef`) for platform-specific code; no `v-html` in mini-programs
-- UTS: No Node.js APIs; no `any` type (strict mode); no DOM/BOM; wrap native calls in try/catch
-
-### Python (PEP 8 + Google Python Style)
-- 4-space indent; 79-char line limit; blank lines between top-level defs
-- `is`/`is not` for None; never `if x == True:`
-- No mutable default args: `def f(items=[])` → `def f(items=None)`
-- Use `with` for files/sockets; use f-strings, not `%` formatting
-- Public modules/functions must have docstring (PEP 257)
-- Import order: stdlib → third-party → local
-
-### Web / CSS
-- Images have `alt`; form controls have `<label>`; keyboard-navigable (WCAG 2.1 AA)
-- BEM naming: `.block__element--modifier`
-- No `!important`; no ID selectors for styling; max 3-level nesting
+**Important**: Do NOT hardcode standards rules here. Always consult `references/coding-standards.md` as the single source of truth for what constitutes a violation.
 
 ## Output format
 

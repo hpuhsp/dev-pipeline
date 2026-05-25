@@ -2,6 +2,8 @@
 
 根据变更代码自动生成单元测试的指南。覆盖 JavaScript/TypeScript、Python、Java/Kotlin。
 
+> **Token-efficient loading**: This file covers 4 language ecosystems. When loading, **read only the section matching the detected tech stack** from Phase 0 framework detection. Skip unrelated language sections.
+
 ## 通用原则
 
 ### 测试什么

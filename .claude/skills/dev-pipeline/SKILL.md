@@ -45,20 +45,32 @@ Before anything else, understand the project state:
 
 1. Run `git status` — scope: staged / working tree / untracked
 2. Run `git diff` and `git diff --staged` — full diff
-3. Detect the tech stack (use `Glob` to batch-check all key files in one shot):
-   - `package.json`, `tsconfig.json` → JS/TS project
-   - `pyproject.toml`, `setup.py`, `requirements*.txt` → Python project
-   - `pom.xml`, `build.gradle`, `build.gradle.kts` → Java/Kotlin project
-   - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
-   - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
-   - **Parallel detection**: Use a single `Glob` to find all key files at once
+3. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty, abort:
+   > "No changes detected. Stage your changes first (`git add <files>`), then re-run the pipeline."
+4. **Guard: merge conflict** — if `git status` shows `both modified:` entries (merge conflict in progress), abort:
+   > "Merge conflict detected. Resolve all conflicts first, then re-run the pipeline."
+5. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
+   > "Not a git repository. Run `git init` or navigate to a git project first."
+6. Detect the tech stack:
+   - If `Glob` tool is available, use it to check for key files: `package.json`, `pyproject.toml`, `pom.xml`, `build.gradle`, etc.
+   - **Fallback (no Glob tool)**: Use shell: `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null`
+   - Key file → stack mapping:
+     - `package.json`, `tsconfig.json` → JS/TS project
+     - `pyproject.toml`, `setup.py`, `requirements*.txt` → Python project
+     - `pom.xml`, `build.gradle`, `build.gradle.kts` → Java/Kotlin project
+     - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
+     - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
+7. **Guard: binary files** — if diff contains "Binary files differ" entries, note them but exclude from review (they're non-text, un-reviewable).
+8. **Guard: large diff** — if diff > 500 lines, warn: "Large diff detected (N lines). Review quality may degrade. Consider splitting into smaller commits."
 
 Summarize: how many files changed, what type of change, impact scope.
 汇总告知用户：涉及几个文件、什么类型的变化、影响范围。
 
 ### Phase 0.5: Scope Drift Detection (optional) · 范围漂移检测
 
-If `TODOS.md` or `.plan` exists in project root, check for scope mismatch:
+**Lightweight check** (always): If more than 5 files changed, ask "Are all these changes related? Or should they be split into separate commits?"
+
+**Deep check** (if `TODOS.md` or `.plan` exists in project root):
 
 1. `TODOS.md`: do diff files match TODO items?
 2. Git log: any unrelated files changed ("while I was in there...")?
@@ -79,7 +91,8 @@ If `TODOS.md` or `.plan` exists in project root, check for scope mismatch:
 
 Check if you have the **Agent tool** (look for `Agent` in your tool list).
 
-- **Agent tool available** → [1A: Parallel Agent Review]
+- **Agent tool available + diff > 50 lines** → [1A: Parallel Agent Review]
+- **Agent tool available + diff ≤ 50 lines** → [1B: In-Skill Serial Review] (small diff — parallel overhead not justified)
 - **No Agent tool** → [1B: In-Skill Serial Review]
 
 ---
@@ -94,17 +107,19 @@ Read `references/review-agents.md` for the complete agent prompts.
 
 #### Launch
 
-**Must launch all 3 agents in ONE message** (serial launching wastes time):
+**Must launch all 3 agents in ONE message** (serial launching wastes time). Use the Agent tool with these parameters:
 
-```
-Agent 1 (security-correctness):  Security vulnerabilities, logic errors, null handling, edge cases
-Agent 2 (performance-efficiency): N+1 queries, memory leaks, unnecessary computation, missed concurrency
-Agent 3 (maintainability-style):   Naming, code duplication, architecture consistency, coding standards
-```
+| Parameter | Agent 1 | Agent 2 | Agent 3 |
+|-----------|---------|---------|---------|
+| `subagent_type` | `"general-purpose"` | `"general-purpose"` | `"general-purpose"` |
+| `description` | `"Security+Correctness review"` | `"Performance+Efficiency review"` | `"Maintainability+Style review"` |
+| `prompt` | Agent 1 template + diff | Agent 2 template + diff | Agent 3 template + diff |
 
-Pass each agent the corresponding prompt from `references/review-agents.md` plus the full `git diff` and tech stack context.
+Each agent's `prompt` = the corresponding full template from `references/review-agents.md`, with `{git_diff}` replaced by the actual diff output and `{detected_language_framework}` replaced by the detected tech stack string (e.g. "TypeScript React project with Jest").
 
-Use `subagent_type: "general-purpose"` for all three (they are analysis tasks, not search tasks).
+**Partial failure handling**: If one or two agents fail to return results (timeout, error), proceed with partial results. Note the missing perspective in output: "Agent N unavailable — {dimension} not covered."
+
+**Launch syntax note**: In Claude Code, invoke the `Agent` tool 3 times in a single message. The pseudo-code above describes parameter mapping; construct actual tool calls per your platform's API.
 
 #### Aggregate Results + Fix-First Classification · 聚合 + 修复分类
 
@@ -115,7 +130,7 @@ After all 3 agents return, classify each finding and aggregate.
 - `ASK`: Needs user decision (architecture changes, API changes, breaking changes) → batch into decision list
 - If agent didn't label fix: naming/format/null-check → AUTO; logic/architecture/security/performance → ASK
 
-**Confidence gating**:
+**Confidence gating** (applied by aggregator, not by individual agents — agents should report ALL findings):
 - Confidence ≥ 7 → show in main report
 - Confidence 5-6 → show with "Medium confidence, verify" caveat
 - Confidence 3-4 → move to appendix (don't block pipeline)
@@ -168,6 +183,8 @@ Review dimensions in order: Correctness → Security → Performance → Maintai
 ### Post-Review Decision · 审查后决策
 
 - 🔴 Blockers → ask user whether to fix before continuing
+  - If user says yes: apply fixes → re-run Phase 1 review (verify fixes don't introduce new issues) → repeat until green
+  - If user opts to defer blockers: note in commit message body that known issues are deferred
 - 🟡 Warnings only → note and continue; user decides
 - All 🟢 → proceed directly to Phase 2
 
@@ -179,6 +196,7 @@ Generate unit tests based on the changed code. Read `references/test-generation.
 
 ### Principles
 
+- **Prioritize Phase 1 findings**: Focus test coverage on code paths flagged by review (null handling gaps, edge cases, error paths in correctness findings)
 - **Don't test third-party code**: Test your logic, not framework/library behavior
 - **Cover boundaries**: Happy path + edge cases + error paths
 - **One test, one behavior**: Each test verifies exactly one thing
@@ -192,13 +210,15 @@ Check in priority order:
 3. `pom.xml` / `build.gradle`: `junit`, `testng`, `mockito`
 4. Config files: `jest.config.*`, `vitest.config.*`, `pytest.ini`
 
+**Fallback**: If no framework found, ask: "No test framework detected. Which framework do you use? (or skip test generation)"
+
 ### Output Placement
 
 - JS/TS: `__tests__/` or co-located `*.test.ts`
 - Python: `tests/` directory, `test_*.py`
 - Java/Kotlin: `src/test/java/`, matching package path
 
-Run existing test suite after generation to confirm no regressions.
+Run affected tests after generation to confirm no regressions. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
 ---
 
@@ -258,13 +278,16 @@ Present to user for confirmation; user can edit directly.
 ### Steps
 
 1. Check current branch (`git branch --show-current`)
-2. If already on `feature/*` or `fix/*` matching the change → commit directly
-3. If on `main`/`master`/`develop` → recommend creating a new branch
-4. Mixed-type changes (e.g. feat+docs):
+2. **Guard: detached HEAD** — if result is empty, warn: "HEAD is detached. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if user confirms.
+3. If already on `feature/*` or `fix/*` matching the change → commit directly
+4. **Guard: type mismatch** — if on `feature/*` branch but change type is `fix` (or vice versa), ask: "You're on a feature branch but this looks like a fix. Create a new branch or commit to the current one?"
+5. If on `main`/`master`/`develop` → recommend creating a new branch
+6. Mixed-type changes (e.g. feat+docs):
    - Branch prefix follows the primary change type (usually `feat`)
    - Inform user that docs/chore changes can follow the main branch or be split into a separate PR
-5. Show recommended branch name, ask for confirmation
-6. `git checkout -b <branch-name>` (after confirmation)
+7. **Guard: branch exists** — before creating, check if branch name already exists (`git branch --list <name>`). If it does, append a numeric suffix: `feature/jwt-refresh-2`
+8. Show recommended branch name, ask for confirmation
+9. `git checkout -b <branch-name>` (after confirmation)
 
 ---
 
@@ -278,12 +301,26 @@ Present to user for confirmation; user can edit directly.
 - [ ] Branch selected/created
 - [ ] No sensitive files (`.env`, `.pem`, credentials, etc.)
 
+**Sensitive file check**: Scan staged file names AND diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, remove from staging with `git rm --cached <file>`.
+
 ### Commit Steps
 
-1. **Selective staging**: `git add <files>` (never `git add -A`)
-2. Show the file list, ask for final confirmation
+1. **Selective staging**: Run `git diff --name-only` to get changed files, then `git add <files>` individually (never `git add -A` or `git add .`). Exclude binary files, generated files, and sensitive files.
+2. Show the file list AND the final commit message, ask for final confirmation (both files AND message together)
 3. `git commit -m "<generated message>"`
 4. Show result
+
+### Pre-Commit Hook Failure · 预提交钩子失败
+
+If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
+
+1. **Read the hook error output** — parse what failed and why
+2. **Classify the failure**:
+   - **Auto-fixable**: linter/format errors with auto-fix available → run the auto-fix command (e.g. `npx biome check --write .`, `ruff check --fix .`, `ktlint -F`), then re-add and retry commit
+   - **Manual**: test failures, complex lint rules → show the error output, suggest fixes, ask user to resolve
+   - **Infrastructure**: hook script errors, missing binaries → report the issue, don't attempt auto-fix
+3. **Retry**: After fixing, `git add <fixed-files>` and `git commit` again (max 3 retries)
+4. **Give up gracefully**: If hooks keep failing after 3 attempts, report: "Pre-commit hooks still failing after 3 fix attempts. Please resolve manually: <error output>. Re-run pipeline after fixing."
 
 ```
 ✅ Commit successful
@@ -302,7 +339,7 @@ Present to user for confirmation; user can edit directly.
 | Mode | Triggers | Behavior |
 |------|--------|------|
 | **Full Pipeline** | "commit my changes", "ship it", "提交代码" | Phase 0→1→2→3→4→5 |
-| **Quick Mode** | "quick commit", "skip review", "快速提交" | Phase 3→4→5 only |
+| **Quick Mode** | "quick commit", "skip review", "快速提交" | Phase 0→3→4→5 only |
 | **Review Only** | "review my changes", "code review" | Phase 1 only |
 | **Test Only** | "generate tests", "生成测试" | Phase 2 only |
 | **Message Only** | "write commit message", "生成commit message" | Phase 3 only |
