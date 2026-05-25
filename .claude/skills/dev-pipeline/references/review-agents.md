@@ -23,6 +23,8 @@ prompt = template
   .replace("{git_diff}", actualDiff)
 ```
 
+**For Agent 3 only**: Before constructing Agent 3's prompt, read `references/coding-standards.md` and extract ONLY the section matching the detected language/framework. Append this extracted section to Agent 3's prompt as additional context. This avoids loading the full 20KB file into Agent 3's isolated context.
+
 ---
 
 ## 通用输出格式（所有 Agent 统一）
@@ -147,6 +149,8 @@ For each finding:
 BLOCKER only for issues that will cause noticeable production impact (OOM, crash, 10x+ slowdown).
 End with: SCORE: X/10
 
+Report ALL findings regardless of confidence level. The pipeline aggregator handles confidence-based filtering.
+
 If clean: "No performance issues found. SCORE: 10/10"
 
 TECH STACK: {detected_language_framework}
@@ -191,7 +195,7 @@ You are a senior software architect and code quality reviewer. Review the follow
 
 ## Coding Standards Compliance
 
-**Read `references/coding-standards.md`**, locate the section for the detected language/framework, and check the diff against every mandatory rule listed there. Key categories:
+The coding standards for your detected language have been pre-loaded into this prompt by the orchestrator. Check the diff against every mandatory rule listed below. Key categories:
 
 | Language | Standards Source | What to check |
 |----------|-----------------|---------------|
@@ -218,6 +222,8 @@ Coding standards violations:
 - Recommended/pedagogical standards → WARNING
 
 End with: SCORE: X/10
+
+Report ALL findings regardless of confidence level. The pipeline aggregator handles confidence-based filtering.
 
 If clean: "No issues found. SCORE: 10/10"
 

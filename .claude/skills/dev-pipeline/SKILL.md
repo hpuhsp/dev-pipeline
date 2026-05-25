@@ -41,27 +41,35 @@ Each phase's output feeds the next. If any phase fails or the user rejects, paus
 
 ## Phase 0: Environment Discovery · 环境感知
 
+> **Mode check first**: Before running discovery, check the [Mode Quick Reference](#mode-quick-reference--模式速查) at the bottom of this file to know which phases are needed. In single-step modes (Review/Test/Message Only), run a lightweight version of Phase 0 — just `git diff`, no framework detection unless needed.
+
 Before anything else, understand the project state:
 
 1. Run `git status` — scope: staged / working tree / untracked
 2. Run `git diff` and `git diff --staged` — full diff
 3. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty, abort:
    > "No changes detected. Stage your changes first (`git add <files>`), then re-run the pipeline."
-4. **Guard: merge conflict** — if `git status` shows `both modified:` entries (merge conflict in progress), abort:
+4. **Guard: merge conflict** — run `git ls-files -u` (lists unmerged files, locale-independent). If output is non-empty (merge conflict in progress), abort:
    > "Merge conflict detected. Resolve all conflicts first, then re-run the pipeline."
 5. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
    > "Not a git repository. Run `git init` or navigate to a git project first."
 6. Detect the tech stack:
    - If `Glob` tool is available, use it to check for key files: `package.json`, `pyproject.toml`, `pom.xml`, `build.gradle`, etc.
-   - **Fallback (no Glob tool)**: Use shell: `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null`
+   - **Fallback (no Glob tool)**: Use shell. POSIX (Linux/macOS/Git Bash): `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null`. PowerShell (Windows): `Get-ChildItem -Recurse -Depth 3 -Include "package.json","pyproject.toml","pom.xml","build.gradle","build.gradle.kts" -Name -ErrorAction SilentlyContinue`. If neither works, fall back to checking files individually.
    - Key file → stack mapping:
      - `package.json`, `tsconfig.json` → JS/TS project
      - `pyproject.toml`, `setup.py`, `requirements*.txt` → Python project
      - `pom.xml`, `build.gradle`, `build.gradle.kts` → Java/Kotlin project
      - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
      - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
-7. **Guard: binary files** — if diff contains "Binary files differ" entries, note them but exclude from review (they're non-text, un-reviewable).
-8. **Guard: large diff** — if diff > 500 lines, warn: "Large diff detected (N lines). Review quality may degrade. Consider splitting into smaller commits."
+7. **Guard: binary files** — if diff contains "Binary files differ" entries, note them and ask user: "Binary files detected (e.g. images, PDFs). Exclude from review? (they're non-text, un-reviewable)". If user wants them committed, include them in Phase 5 staging but skip review. Never auto-exclude without user confirmation.
+8. **Guard: large diff** — if combined diff output exceeds 500 lines (count raw output from `git diff` + `git diff --staged`, including context lines):
+   - Warn: "Large diff detected (N lines). Review quality may degrade."
+   - **Auto-fallback**: Force 1B serial review mode (even if Agent tool is available) — serial review is more token-efficient for large diffs and avoids 3× context duplication.
+   - If diff > 1000 lines: additionally suggest file-by-file chunked review ("Review 5 files at a time?")
+9. **Guard: submodules** — if `git submodule status` shows submodules, and diff changes include submodule hash changes, note: "Submodule changes detected. Run `git submodule update --init` if needed."
+10. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
+11. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
 
 Summarize: how many files changed, what type of change, impact scope.
 汇总告知用户：涉及几个文件、什么类型的变化、影响范围。
@@ -184,7 +192,7 @@ Review dimensions in order: Correctness → Security → Performance → Maintai
 
 - 🔴 Blockers → ask user whether to fix before continuing
   - If user says yes: apply fixes → re-run Phase 1 review (verify fixes don't introduce new issues) → repeat until green
-  - If user opts to defer blockers: note in commit message body that known issues are deferred
+  - **Max 3 review cycles** — if blockers persist after 3 rounds, present remaining issues to user for manual decision (don't loop indefinitely)
 - 🟡 Warnings only → note and continue; user decides
 - All 🟢 → proceed directly to Phase 2
 
@@ -217,6 +225,8 @@ Check in priority order:
 - JS/TS: `__tests__/` or co-located `*.test.ts`
 - Python: `tests/` directory, `test_*.py`
 - Java/Kotlin: `src/test/java/`, matching package path
+
+**Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the test run step — there's nothing to regress against.
 
 Run affected tests after generation to confirm no regressions. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
@@ -277,8 +287,8 @@ Present to user for confirmation; user can edit directly.
 
 ### Steps
 
-1. Check current branch (`git branch --show-current`)
-2. **Guard: detached HEAD** — if result is empty, warn: "HEAD is detached. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if user confirms.
+1. Check current branch: use `git rev-parse --abbrev-ref HEAD` (compatible back to git 1.6; avoid `git branch --show-current` which requires git 2.22+)
+2. **Guard: detached HEAD** — if result is `HEAD` (not a branch name), warn: "HEAD is detached. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if user confirms.
 3. If already on `feature/*` or `fix/*` matching the change → commit directly
 4. **Guard: type mismatch** — if on `feature/*` branch but change type is `fix` (or vice versa), ask: "You're on a feature branch but this looks like a fix. Create a new branch or commit to the current one?"
 5. If on `main`/`master`/`develop` → recommend creating a new branch
@@ -305,9 +315,12 @@ Present to user for confirmation; user can edit directly.
 
 ### Commit Steps
 
-1. **Selective staging**: Run `git diff --name-only` to get changed files, then `git add <files>` individually (never `git add -A` or `git add .`). Exclude binary files, generated files, and sensitive files.
+1. **Selective staging**: Run `git status --short` to enumerate ALL changes (staged + unstaged + untracked). Never use `git add -A` or `git add .`. Exclude binary files, generated files, and sensitive files. Always quote paths: `git add "path/to/file.ts"`. For robust iteration, prefer `git status --porcelain` which is parsing-friendly.
 2. Show the file list AND the final commit message, ask for final confirmation (both files AND message together)
-3. `git commit -m "<generated message>"`
+3. **Commit with multi-line message**:
+   - **POSIX (Linux/macOS/Git Bash)**: Use multiple `-m` flags: `git commit -m "subject" -m "body paragraph" -m "footer"`
+   - **PowerShell (Windows)**: Same multi-`-m` approach works. Do NOT embed `\n` in a single `-m` string — PowerShell renders it literally.
+   - **Alternative**: Use a temporary file: `git commit -F /tmp/commit-msg.txt` (POSIX) or `git commit -F $env:TEMP\commit-msg.txt` (PowerShell)
 4. Show result
 
 ### Pre-Commit Hook Failure · 预提交钩子失败
@@ -315,10 +328,11 @@ Present to user for confirmation; user can edit directly.
 If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
 
 1. **Read the hook error output** — parse what failed and why
-2. **Classify the failure**:
-   - **Auto-fixable**: linter/format errors with auto-fix available → run the auto-fix command (e.g. `npx biome check --write .`, `ruff check --fix .`, `ktlint -F`), then re-add and retry commit
-   - **Manual**: test failures, complex lint rules → show the error output, suggest fixes, ask user to resolve
-   - **Infrastructure**: hook script errors, missing binaries → report the issue, don't attempt auto-fix
+2. **Classify the failure** using pattern matching on the hook output:
+   - **Auto-fixable**: output contains `eslint.*--fix`, `biome.*check.*--write`, `ruff.*--fix`, `prettier.*--write`, `ktlint.*-F`, `checkstyle` formatting errors, `stylelint.*--fix`, `autopep8`, `black` → run the corresponding auto-fix command, then re-add and retry commit
+   - **Manual**: output contains test failures (`FAIL`, `assertions failed`, `AssertionError`), type errors (`TS[0-9]`, `mypy.*error`, `pyright`), or complex lint rules with no auto-fix flag → show the error output, suggest fixes, ask user to resolve
+   - **Infrastructure**: output contains `command not found`, `ModuleNotFoundError`, `cannot execute`, `permission denied`, hook script crash traces → report the issue, don't attempt auto-fix
+   - **Unknown**: if the output doesn't clearly match any category → show it to the user and ask "Is this auto-fixable, or should I show the full error?"
 3. **Retry**: After fixing, `git add <fixed-files>` and `git commit` again (max 3 retries)
 4. **Give up gracefully**: If hooks keep failing after 3 attempts, report: "Pre-commit hooks still failing after 3 fix attempts. Please resolve manually: <error output>. Re-run pipeline after fixing."
 

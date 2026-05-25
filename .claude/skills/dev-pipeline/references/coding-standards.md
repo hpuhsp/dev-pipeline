@@ -269,6 +269,52 @@
 - 用 `supervisorScope` 隔离子协程失败（一个子协程失败不取消兄弟）
 - 异常处理：顶层协程用 `CoroutineExceptionHandler`，内部用 `try/catch`
 
+### Kotlin Flow 与响应式模式
+
+- `StateFlow` / `SharedFlow`：热流用于状态和事件分发
+- 生命周期感知收集：UI 层使用 `repeatOnLifecycle(Lifecycle.State.STARTED) { flow.collect { ... } }` 或 `flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)`
+- 禁止在 `lifecycleScope.launch { flow.collect {} }` 中直接收集（无生命周期感知，后台泄漏）
+- `stateIn(scope, SharingStarted.WhileSubscribed(5000), initialValue)` 将冷流转换为热 StateFlow
+- `shareIn` 用于多观察者共享冷流
+- `collectLatest`：新值到达时自动取消上一个收集（用于搜索、自动保存等场景）
+- `catch {}` 操作符捕获上游异常；不要吞没异常（至少打日志）
+
+### Kotlin 密封类型（Sealed Classes）
+
+- 受限类型层级优先使用 `sealed class` / `sealed interface`：
+  ```kotlin
+  // ✅ 编译器强制穷尽 when 检查
+  sealed interface UiState {
+      data object Loading : UiState
+      data class Success(val data: List<Item>) : UiState
+      data class Error(val message: String) : UiState
+  }
+  ```
+- `when` 穷尽检查 — 遗漏分支编译报错
+- `sealed interface`（Kotlin 1.5+）允许跨包扩展，比 `sealed class` 更灵活
+- 枚举 (`enum class`) 用于编译期已知的固定值集；sealed class 用于动态数据的受限状态
+
+### Kotlin 测试
+
+- **JUnit 5** + **MockK**（Kotlin 首选 mock 框架）：
+  ```kotlin
+  class UserServiceTest {
+      private val repository = mockk<UserRepository>()
+      private val userService = UserService(repository)
+
+      @Test
+      fun `should create user with valid input`() {
+          every { repository.findByEmail(any()) } returns null
+          coEvery { repository.saveAsync(any()) } returns mockk()
+          // ...
+      }
+  }
+  ```
+- `mockk` vs `mockito`：Kotlin 项目优先 MockK（支持 `coEvery` 协程 mock、`every` DSL、`relaxed` mock）
+- **Compose 测试**：`ComposeTestRule`（`createComposeRule()`）+ `onNodeWithText/onNodeWithTag` 查找 + `performClick/performTextInput` 交互 + `assertIsDisplayed/assertTextEquals` 断言
+- 使用 `@RunWith(AndroidJUnit4::class)` 进行 Android 仪器化测试
+- 测试文件：`src/test/kotlin/` 或 `src/androidTest/kotlin/`（Android 仪器化）
+
 ### detekt（Kotlin 静态分析）
 
 - `EmptyFunctionBlock` — 空函数体需注释说明
@@ -312,21 +358,36 @@
 - 类型断言使用 `as Type`（不用 `<Type>`）
 - 优先 interface 而非 type（除非需要联合类型）
 - 建议函数返回值声明类型（复杂类型时必须，简单类型由作者判断 — Google TS Style 不强制所有函数）
-- 避免使用 `any`（优先 `unknown` 或具体类型；Google TS Style 不建议使用）
+- **禁止使用 `any`**（Google TS Style: "Do not use the `any` type"；优先 `unknown` 或具体类型；除非有明确的临时原因并附 // FIXME 注释说明）
 - **禁止使用 `@ts-ignore`**（Google TS Style 完全禁止，包括 `@ts-expect-error` 和 `@ts-nocheck`；仅单元测试中可例外使用 `@ts-expect-error`）
 - 推荐启用 `strict: true`（包括 `strictNullChecks`），这是 TypeScript 代码质量的基础
 - 使用 `const enum` 或 string union 替代魔法字符串
 - 善用 `readonly` 和 `as const`
 
+### JS/TS 测试
+
+- **Jest** / **Vitest** 为首选测试框架（Vitest 性能更优，与 Vite 原生集成）
+- 命名：`describe('<component/function>', () => { it('should <behavior> when <condition>', () => {...}) })`
+- AAA 结构：Arrange（准备）→ Act（执行）→ Assert（验证）
+- Mock：仅 mock 外部依赖（API、DB、文件系统），不 mock 被测模块内部函数
+- React：`@testing-library/react` — `render()` + `screen.getByRole/getByText/getByTestId` + `fireEvent` 或 `userEvent` + `waitFor` 等异步断言
+- Vue 3：`@vue/test-utils` — `mount(Component, { props, slots })` + `wrapper.find/wrapper.findAll` + `wrapper.trigger`
+- 快照测试：谨慎使用；仅用于稳定的纯展示组件，不用于频繁变化的大组件
+- 覆盖率：关注关键路径（>70% 分支覆盖），不强制 100%
+
 ### React 规范
 
 - 组件名：PascalCase；组件文件使用同名
-- Hook 以 `use` 开头
+- Hook 以 `use` 开头；自定义 Hook 必须遵循 `rules-of-hooks`（不在条件/循环中调用）
 - 事件处理函数以 `handle` 开头（社区广泛采用的惯例）：`handleClick`
 - 传递事件处理 props 以 `on` 开头（React 官方）：`onClick`
-- 不要在 `useEffect` 中遗漏依赖项
+- `useEffect` 依赖项必须完整声明（`eslint-plugin-react-hooks/exhaustive-deps`）
+- `useMemo` 用于昂贵的计算缓存；`useCallback` 用于传递给子组件的函数引用稳定性 — 不要无脑包裹所有函数（过度 memoization）
 - 用 `key` prop 时使用稳定唯一值（不用 index）
-- 避免不必要的 state（能从 props/其他 state 计算出的就用 `useMemo`）
+- 避免不必要的 state（能从 props/其他 state 计算出的就用 `useMemo` 或直接计算）
+- Error Boundary：在组件树的适当层级放置 `<ErrorBoundary>`，优雅降级而非白屏
+- 严格模式开发：使用 `<StrictMode>` 检测副作用问题和过时 API
+- Next.js：优先 Server Components，仅在需要交互/浏览器 API 时添加 `'use client'`；服务端数据获取用 `async` Server Component 或 `fetch` + `cache()`
 
 ### Vue 3 规范（Vue Style Guide 官方）
 
@@ -498,6 +559,58 @@
 - 避免全局变量
 - 尽量使用生成器和列表推导
 - 默认参数不使用可变对象
+
+### 现代 Python 类型系统（Typing）
+
+- `TypedDict`：为字典结构提供类型安全的 key/value 定义（替代裸 `dict[str, Any]`）
+  ```python
+  class UserDict(TypedDict):
+      id: int
+      name: str
+      email: str | None
+  ```
+- `Protocol`：结构化子类型（不依赖继承，满足方法签名即可）
+- `@dataclass`：数据载体类的标准选择（替代手写 `__init__`）
+- `Literal["a", "b"]`：限制值的集合（类似枚举）
+- `Final`：声明不可修改值；`Self`（3.11+）返回自身类型
+- `T | None` 优先于 `Optional[T]`（3.10+）
+- `dict[str, int]` 优先于 `Dict[str, int]`（3.9+ builtin generics）
+
+### Python asyncio
+
+- `async`/`await` 用于 I/O 密集型操作，禁止在 `async` 函数中写 CPU 阻塞代码
+- `asyncio.gather()` 并发多个协程；`asyncio.create_task()` 创建后台任务
+- 禁止 `await` 忘记：未 await 的协程不会执行（最常见 asyncio bug）
+- 混用 sync/async 时使用 `asyncio.run()` 或 `anyio.to_thread.run_sync()`，不要在 async 上下文中调用阻塞函数
+- FastAPI：路径函数可以是 `def` 或 `async def`（中间件/依赖自动检测）
+
+### Python Web 框架
+
+**FastAPI**
+- 路径函数：`async def` 用于 async 依赖；`def` 用于同步（线程池中运行）
+- Pydantic v2：`BaseModel` + `model_validate()` + `field_validator`；禁止混用 v1 `class Config`
+- 依赖注入用 `Depends()`：`def get_db() -> Generator[Session, None, None]`
+- 异常：抛 `HTTPException(status_code=..., detail=...)`，不用 `return JSONResponse(...)`
+- 响应模型：`response_model=` 标注过滤敏感字段
+- 后台任务：`BackgroundTasks` 用于轻量任务
+
+**Django**
+- Model：字段类型精确（不用 `CharField(max_length=255)` 当 `255` 无业务理由）；`class Meta` 中 `ordering` 和 `indexes` 明确
+- View：优先 CBV（`DetailView`, `ListView`）+ 注入；FBV 用于简单逻辑
+- N+1：`select_related()`（外键）/ `prefetch_related()`（多对多）防止懒加载查询
+- Settings：多个 `settings` 文件（`base.py`, `dev.py`, `prod.py`）；禁止在 settings 中写业务逻辑
+- Signals：谨慎使用，避免隐式依赖链；首选显式 service 调用
+
+### Python 测试（pytest）
+
+- **pytest** 为首选测试框架（`unittest` 仅用于遗留项目）
+- Fixtures：`@pytest.fixture` + `conftest.py` 共享；`yield` 模式做 teardown
+- 参数化：`@pytest.mark.parametrize("input,expected", [...])` 覆盖多场景
+- Mock：`unittest.mock.patch()` 用于外部依赖；`monkeypatch` fixture 用于环境变量/属性替换
+- 命名：`test_<function>_<scenario>`（`test_create_user_with_valid_email`）
+- 目录：`tests/` 根，与源代码结构镜像（`tests/services/test_user.py`）
+- 运行：`pytest tests/`（全部）或 `pytest tests/auth/ -v`（模块范围）
+- 禁止 `assert x == y` 无诊断信息；使用 `assert result.status_code == 200, f"Expected 200, got {result.status_code}"`
 
 ---
 
