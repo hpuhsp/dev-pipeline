@@ -41,14 +41,16 @@ Each phase's output feeds the next. If any phase fails or the user rejects, paus
 
 ## Phase 0: Environment Discovery · 环境感知
 
-> **Mode check first**: Before running discovery, check the [Mode Quick Reference](#mode-quick-reference--模式速查) at the bottom of this file to know which phases are needed. In single-step modes (Review/Test/Message Only), run a lightweight version of Phase 0 — just `git diff`, no framework detection unless needed.
+> **Mode check first**: Before running discovery, check the [Mode Quick Reference](#mode-quick-reference--模式速查) at the bottom of this file to know which phases are needed. In single-step modes (Review/Test/Message Only), run a lightweight version of Phase 0 — `git diff && git diff --staged`, no framework detection unless needed.
 
 Before anything else, understand the project state:
 
 1. Run `git status` — scope: staged / working tree / untracked
-2. Run `git diff` and `git diff --staged` — full diff
-3. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty, abort:
+2. Run `git diff` and `git diff --staged` — full diff of tracked files
+3. **Untracked files**: If `git status` shows untracked files, run `git add -N <untracked-files>` (intent-to-add, does NOT stage content, only makes the files visible to `git diff`). This ensures new files are included in code review without being committed accidentally.
+4. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty AND there are no untracked files, abort:
    > "No changes detected. Stage your changes first (`git add <files>`), then re-run the pipeline."
+   If untracked files exist but diff is otherwise empty, proceed — the untracked files ARE the changes.
 4. **Guard: merge conflict** — run `git ls-files -u` (lists unmerged files, locale-independent). If output is non-empty (merge conflict in progress), abort:
    > "Merge conflict detected. Resolve all conflicts first, then re-run the pipeline."
 5. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
@@ -63,7 +65,7 @@ Before anything else, understand the project state:
      - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
      - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
 7. **Guard: binary files** — if diff contains "Binary files differ" entries, note them and ask user: "Binary files detected (e.g. images, PDFs). Exclude from review? (they're non-text, un-reviewable)". If user wants them committed, include them in Phase 5 staging but skip review. Never auto-exclude without user confirmation.
-8. **Guard: large diff** — if combined diff output exceeds 500 lines (count raw output from `git diff` + `git diff --staged`, including context lines):
+8. **Guard: large diff** — if combined diff output exceeds 500 lines (count with `git diff && git diff --staged | wc -l` on POSIX, or `(git diff; git diff --staged).Count` on PowerShell):
    - Warn: "Large diff detected (N lines). Review quality may degrade."
    - **Auto-fallback**: Force 1B serial review mode (even if Agent tool is available) — serial review is more token-efficient for large diffs and avoids 3× context duplication.
    - If diff > 1000 lines: additionally suggest file-by-file chunked review ("Review 5 files at a time?")
@@ -96,6 +98,8 @@ Summarize: how many files changed, what type of change, impact scope.
 ## Phase 1: Code Review · 代码审查 (Dual Mode)
 
 ### Mode Detection · 模式检测
+
+**Note**: If Phase 0 forced 1B mode (large diff >500 lines), skip mode detection — go directly to 1B regardless of Agent tool availability.
 
 Check if you have the **Agent tool** (look for `Agent` in your tool list).
 
@@ -228,7 +232,7 @@ Check in priority order:
 
 **Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the test run step — there's nothing to regress against.
 
-Run affected tests after generation to confirm no regressions. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
+Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
 ---
 
@@ -311,11 +315,11 @@ Present to user for confirmation; user can edit directly.
 - [ ] Branch selected/created
 - [ ] No sensitive files (`.env`, `.pem`, credentials, etc.)
 
-**Sensitive file check**: Scan staged file names AND diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, remove from staging with `git rm --cached <file>`.
+**Sensitive file check**: Scan files to be committed (from `git status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, remove from staging with `git rm --cached <file>`.
 
 ### Commit Steps
 
-1. **Selective staging**: Run `git status --short` to enumerate ALL changes (staged + unstaged + untracked). Never use `git add -A` or `git add .`. Exclude binary files, generated files, and sensitive files. Always quote paths: `git add "path/to/file.ts"`. For robust iteration, prefer `git status --porcelain` which is parsing-friendly.
+1. **Selective staging**: Run `git status --short` to enumerate ALL changes (staged + unstaged + untracked). Never use `git add -A` or `git add .`. Exclude binary files, generated files (`dist/`, `build/`, `*.generated.*`, `node_modules/`, `__pycache__/`), and sensitive files. Always quote paths: `git add "path/to/file.ts"`. For robust iteration, prefer `git status --porcelain` which is parsing-friendly.
 2. Show the file list AND the final commit message, ask for final confirmation (both files AND message together)
 3. **Commit with multi-line message**:
    - **POSIX (Linux/macOS/Git Bash)**: Use multiple `-m` flags: `git commit -m "subject" -m "body paragraph" -m "footer"`
@@ -329,7 +333,8 @@ If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
 
 1. **Read the hook error output** — parse what failed and why
 2. **Classify the failure** using pattern matching on the hook output:
-   - **Auto-fixable**: output contains `eslint.*--fix`, `biome.*check.*--write`, `ruff.*--fix`, `prettier.*--write`, `ktlint.*-F`, `checkstyle` formatting errors, `stylelint.*--fix`, `autopep8`, `black` → run the corresponding auto-fix command, then re-add and retry commit
+   - **Auto-fixable**: output contains `eslint.*--fix`, `biome.*check.*--write`, `ruff.*--fix`, `prettier.*--write`, `ktlint.*-F`, `stylelint.*--fix`, `autopep8`, `black` → run the corresponding auto-fix command, then re-add and retry commit
+     - NOTE: `checkstyle` is a reporting-only tool with no `--fix` — if only checkstyle errors appear, classify as Manual
    - **Manual**: output contains test failures (`FAIL`, `assertions failed`, `AssertionError`), type errors (`TS[0-9]`, `mypy.*error`, `pyright`), or complex lint rules with no auto-fix flag → show the error output, suggest fixes, ask user to resolve
    - **Infrastructure**: output contains `command not found`, `ModuleNotFoundError`, `cannot execute`, `permission denied`, hook script crash traces → report the issue, don't attempt auto-fix
    - **Unknown**: if the output doesn't clearly match any category → show it to the user and ask "Is this auto-fixable, or should I show the full error?"

@@ -194,6 +194,7 @@ Pass 3 结束: SCORE: X/10
   - Correctness+Security: X/10 (Pass 1)
   - Performance+Efficiency: X/10 (Pass 2)
   - Maintainability+Standards: X/10 (Pass 3)
+  - Coding Standards Compliance: X/10 (Pass 3, per coding-standards.md)
 ```
 
 ## Fix-First 处理（与 1A 对齐）

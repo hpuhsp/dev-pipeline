@@ -225,7 +225,7 @@
 **格式**
 - 缩进：4 空格
 - 列宽：100 字符
-- 冒号前加空格（类型声明）：`fun foo(bar: String)`
+- 冒号规则：类型声明/返回类型冒号前不加空格（`bar: String`, `fun foo(): Int`）；类继承冒号前加空格（`class Foo : Bar`）
 - lambda 中变量名尽量简短或使用 `it`
 
 **惯用法**
@@ -378,7 +378,7 @@
 ### React 规范
 
 - 组件名：PascalCase；组件文件使用同名
-- Hook 以 `use` 开头；自定义 Hook 必须遵循 `rules-of-hooks`（不在条件/循环中调用）
+- Hook 以 `use` 开头；自定义 Hook 必须遵循 `rules-of-hooks`：不在条件/循环/return 之后调用 Hook（必须始终在组件/Hook 顶层以相同顺序调用）
 - 事件处理函数以 `handle` 开头（社区广泛采用的惯例）：`handleClick`
 - 传递事件处理 props 以 `on` 开头（React 官方）：`onClick`
 - `useEffect` 依赖项必须完整声明（`eslint-plugin-react-hooks/exhaustive-deps`）
@@ -395,7 +395,7 @@
 - 组件名必须为多词（避免与 HTML 元素冲突，根 `App` 除外）：`TodoItem` 而非 `Item`
 - Props 必须使用详细定义（type, required, default, validator），禁用 `props: ['status']`
 - `v-for` 必须搭配 `:key`，且 key 使用稳定唯一值（不用 index）
-- `v-if` 和 `v-for` 禁止在同一元素上 — `v-for` 优先级更高会导致性能灾难；应使用 computed 先过滤
+- `v-if` 和 `v-for` 禁止在同一元素上 — 在 Vue 3 中 `v-if` 优先级高于 `v-for`，导致 `v-if` 无法访问 `v-for` 的循环变量（在 Vue 2 中 `v-for` 优先级更高造成性能问题）；应使用 computed 先过滤
 - 组件 `data()` 必须是函数（防止多实例共享状态）
 
 **Priority B — 强烈推荐（提高可读性）**
@@ -576,12 +576,19 @@
 - `T | None` 优先于 `Optional[T]`（3.10+）
 - `dict[str, int]` 优先于 `Dict[str, int]`（3.9+ builtin generics）
 
+### Python 结构化模式匹配（match/case, 3.10+）
+
+- `match`/`case` 用于结构化数据解构（替代复杂的 `if/elif isinstance` 链）
+- 模式可以解构 `dict`、`list`、dataclass、namedtuple 等
+- 守卫条件用 `case pattern if condition:`
+
 ### Python asyncio
 
 - `async`/`await` 用于 I/O 密集型操作，禁止在 `async` 函数中写 CPU 阻塞代码
 - `asyncio.gather()` 并发多个协程；`asyncio.create_task()` 创建后台任务
 - 禁止 `await` 忘记：未 await 的协程不会执行（最常见 asyncio bug）
-- 混用 sync/async 时使用 `asyncio.run()` 或 `anyio.to_thread.run_sync()`，不要在 async 上下文中调用阻塞函数
+- 混用 sync/async 时：从同步代码调用异步 → `asyncio.run()`（不能在 async 上下文内使用）；从异步代码调用阻塞同步 → `asyncio.to_thread()` 或 `anyio.to_thread.run_sync()`
+- 不要在 async 上下文中直接调用阻塞函数（会阻塞整个事件循环）
 - FastAPI：路径函数可以是 `def` 或 `async def`（中间件/依赖自动检测）
 
 ### Python Web 框架
@@ -610,7 +617,7 @@
 - 命名：`test_<function>_<scenario>`（`test_create_user_with_valid_email`）
 - 目录：`tests/` 根，与源代码结构镜像（`tests/services/test_user.py`）
 - 运行：`pytest tests/`（全部）或 `pytest tests/auth/ -v`（模块范围）
-- 禁止 `assert x == y` 无诊断信息；使用 `assert result.status_code == 200, f"Expected 200, got {result.status_code}"`
+- pytest 自动重写 `assert` 提供丰富的失败诊断（变量值、表达式对比），无需手动添加诊断消息；仅在断言链复杂或需额外业务上下文时添加自定义消息
 
 ---
 
