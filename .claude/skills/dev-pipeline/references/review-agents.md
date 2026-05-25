@@ -221,11 +221,13 @@ Coding standards violations:
 - Mandatory standard violations → BLOCKER
 - Recommended/pedagogical standards → WARNING
 
-End with: SCORE: X/10
+End with two scores:
+MAINTAINABILITY+STYLE SCORE: X/10
+CODING STANDARDS COMPLIANCE SCORE: X/10
 
 Report ALL findings regardless of confidence level. The pipeline aggregator handles confidence-based filtering.
 
-If clean: "No issues found. SCORE: 10/10"
+If clean: "No issues found. MAINTAINABILITY+STYLE SCORE: 10/10, CODING STANDARDS COMPLIANCE SCORE: 10/10"
 
 TECH STACK: {detected_language_framework}
 DIFF:

@@ -163,7 +163,7 @@ Pass 2 结束: SCORE: X/10
 - import 顺序是否与项目一致？
 
 每项发现标注：[BLOCKER|WARNING] (confidence, fix) file:line
-Pass 3 结束: SCORE: X/10
+Pass 3 结束: MAINTAINABILITY+STYLE SCORE: X/10, CODING STANDARDS COMPLIANCE SCORE: X/10
 
 ---
 

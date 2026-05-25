@@ -48,14 +48,13 @@ Before anything else, understand the project state:
 1. Run `git status` — scope: staged / working tree / untracked
 2. Run `git diff` and `git diff --staged` — full diff of tracked files
 3. **Untracked files**: If `git status` shows untracked files, run `git add -N <untracked-files>` (intent-to-add, does NOT stage content, only makes the files visible to `git diff`). This ensures new files are included in code review without being committed accidentally.
-4. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty AND there are no untracked files, abort:
+4. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty AND `git status` shows no untracked files, abort:
    > "No changes detected. Stage your changes first (`git add <files>`), then re-run the pipeline."
-   If untracked files exist but diff is otherwise empty, proceed — the untracked files ARE the changes.
-4. **Guard: merge conflict** — run `git ls-files -u` (lists unmerged files, locale-independent). If output is non-empty (merge conflict in progress), abort:
+5. **Guard: merge conflict** — run `git ls-files -u` (lists unmerged files, locale-independent). If output is non-empty (merge conflict in progress), abort:
    > "Merge conflict detected. Resolve all conflicts first, then re-run the pipeline."
-5. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
+6. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
    > "Not a git repository. Run `git init` or navigate to a git project first."
-6. Detect the tech stack:
+7. Detect the tech stack:
    - If `Glob` tool is available, use it to check for key files: `package.json`, `pyproject.toml`, `pom.xml`, `build.gradle`, etc.
    - **Fallback (no Glob tool)**: Use shell. POSIX (Linux/macOS/Git Bash): `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null`. PowerShell (Windows): `Get-ChildItem -Recurse -Depth 3 -Include "package.json","pyproject.toml","pom.xml","build.gradle","build.gradle.kts" -Name -ErrorAction SilentlyContinue`. If neither works, fall back to checking files individually.
    - Key file → stack mapping:
@@ -64,14 +63,14 @@ Before anything else, understand the project state:
      - `pom.xml`, `build.gradle`, `build.gradle.kts` → Java/Kotlin project
      - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
      - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
-7. **Guard: binary files** — if diff contains "Binary files differ" entries, note them and ask user: "Binary files detected (e.g. images, PDFs). Exclude from review? (they're non-text, un-reviewable)". If user wants them committed, include them in Phase 5 staging but skip review. Never auto-exclude without user confirmation.
-8. **Guard: large diff** — if combined diff output exceeds 500 lines (count with `git diff && git diff --staged | wc -l` on POSIX, or `(git diff; git diff --staged).Count` on PowerShell):
+8. **Guard: binary files** — if diff contains "Binary files differ" entries, note them and ask user: "Binary files detected (e.g. images, PDFs). Exclude from review? (they're non-text, un-reviewable)". If user wants them committed, include them in Phase 5 staging but skip review. Never auto-exclude without user confirmation.
+9. **Guard: large diff** — if combined diff output exceeds 500 lines (count with `(git diff; git diff --staged) | wc -l` on POSIX, or `(git diff; git diff --staged).Count` on PowerShell):
    - Warn: "Large diff detected (N lines). Review quality may degrade."
    - **Auto-fallback**: Force 1B serial review mode (even if Agent tool is available) — serial review is more token-efficient for large diffs and avoids 3× context duplication.
    - If diff > 1000 lines: additionally suggest file-by-file chunked review ("Review 5 files at a time?")
-9. **Guard: submodules** — if `git submodule status` shows submodules, and diff changes include submodule hash changes, note: "Submodule changes detected. Run `git submodule update --init` if needed."
-10. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
-11. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
+10. **Guard: submodules** — if `git submodule status` shows submodules, and diff changes include submodule hash changes, note: "Submodule changes detected. Run `git submodule update --init` if needed."
+11. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
+12. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
 
 Summarize: how many files changed, what type of change, impact scope.
 汇总告知用户：涉及几个文件、什么类型的变化、影响范围。
@@ -230,7 +229,7 @@ Check in priority order:
 - Python: `tests/` directory, `test_*.py`
 - Java/Kotlin: `src/test/java/`, matching package path
 
-**Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the test run step — there's nothing to regress against.
+**Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the regression check but still run the newly generated test file to verify it passes.
 
 Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
