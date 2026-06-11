@@ -1,0 +1,39 @@
+diff --git a/src/services/report.py b/src/services/report.py
+index 1111111..2222222 100644
+--- a/src/services/report.py
++++ b/src/services/report.py
+@@ -1,5 +1,35 @@
+ import os
++import pickle
+
++PASSWORD = "Pr0d-DB-P@ssw0rd!"
++
++
++def add_tag(tag, tags=[]):
++    # EXPECTED: mutable default argument
++    tags.append(tag)
++    return tags
++
++
++def get_timeout(config):
++    # EXPECTED: dict[key] without .get() — KeyError on missing key
++    return config["timeout"]
++
++
++def run_backup(path):
++    # EXPECTED: shell injection — user input passed to os.system
++    os.system("tar -czf backup.tgz " + path)
++
++
++def load_session(raw_bytes):
++    # EXPECTED: unsafe deserialization of untrusted input
++    return pickle.loads(raw_bytes)
++
++
++def read_all(filename):
++    # EXPECTED: file handle not closed (no with statement); broad except: pass
++    try:
++        f = open(filename)
++        return f.read()
++    except Exception:
++        pass

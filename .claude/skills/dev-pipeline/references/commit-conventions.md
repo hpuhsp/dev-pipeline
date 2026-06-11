@@ -1,8 +1,9 @@
-# Conventional Commits 规范
+# Conventional Commits Spec · 规范
 
-基于 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/) 标准的提交信息规范。
+Commit message conventions based on the [Conventional Commits 1.0.0](https://www.conventionalcommits.org/) standard.
+基于 Conventional Commits 1.0.0 标准的提交信息规范。
 
-## 基本格式
+## Basic Format · 基本格式
 
 ```
 <type>(<scope>): <subject>
@@ -12,13 +13,13 @@
 <footer>
 ```
 
-- **type**: 必填，变更类型
-- **scope**: 可选，影响范围
-- **subject**: 必填，简短描述（英文 70 字符以内，中文 35 字以内）
-- **body**: 可选，详细描述（每行 72 字符以内）
-- **footer**: 可选，关联 issue / 破坏性变更说明
+- **type**: required — change type · 必填，变更类型
+- **scope**: optional — affected area · 可选，影响范围
+- **subject**: required — short description, max 70 chars in English (35 chars in Chinese) · 必填，简短描述（英文 70 字符以内，中文 35 字以内）
+- **body**: optional — detailed description, wrap at 72 chars per line · 可选，详细描述（每行 72 字符以内）
+- **footer**: optional — issue refs / breaking change notes · 可选，关联 issue / 破坏性变更说明
 
-## 类型 (type) 速查表
+## Type Reference · 类型速查表
 
 | type | 说明 | 使用场景 |
 |------|------|---------|
@@ -35,9 +36,9 @@
 | `chore` | 杂项 | 不修改 src 或 test 的其他变更（如 .gitignore） |
 | `revert` | 回退 | 回退之前的提交 |
 
-## Scope 推断规则
+## Scope Inference · Scope 推断规则
 
-从文件路径自动推断 scope：
+Infer scope automatically from file paths · 从文件路径自动推断 scope：
 
 | 文件路径 | 推断 scope |
 |----------|-----------|
@@ -50,12 +51,12 @@
 | `src/auth/*`, `src/api/auth/*` 同时变更 | `auth` |
 | 跨多个无关联模块 | 省略 scope 或取最高层 |
 
-## Subject 编写规则
+## Subject Rules · Subject 编写规则
 
-- 使用祈使句，现在时（"添加" 而非 "添加了"）
-- 首字母小写（中文直接写，英文小写开头）
-- 结尾不加句号
-- 简短精炼，50 字符以内
+- Imperative mood, present tense ("add" not "added") · 使用祈使句，现在时（"添加" 而非 "添加了"）
+- Lowercase first letter for English · 首字母小写（中文直接写，英文小写开头）
+- No trailing period · 结尾不加句号
+- Concise: max 70 characters in English, 35 in Chinese · 简短精炼（英文 70 字符以内，中文 35 字以内）
 
 ```
 ✅ feat(auth): add JWT token refresh
@@ -67,13 +68,13 @@
 ❌ FIX: 修复了一个订单计算的bug，当折扣和优惠券同时存在时总价不对（太长，格式不对）
 ```
 
-## Body 编写规则
+## Body Rules · Body 编写规则
 
-当 subject 不足以说清楚变更时，添加 body：
+Add a body when the subject alone can't explain the change · 当 subject 不足以说清楚变更时，添加 body：
 
-- 解释 **为什么** 做这个变更（而非怎么做——代码已经说了）
-- 每行 72 字符以内
-- 与 subject 之间空一行
+- Explain **why**, not how — the code already shows how · 解释 **为什么** 做这个变更（而非怎么做——代码已经说了）
+- Wrap at 72 characters per line · 每行 72 字符以内
+- Blank line between subject and body · 与 subject 之间空一行
 
 ```
 fix(order): fix total calculation with stacked discounts
@@ -85,10 +86,11 @@ discounted price, resulting in incorrect totals.
 The fix applies discounts sequentially in the order they were added.
 ```
 
-## Footer 编写规则
+## Footer Rules · Footer 编写规则
 
-### 破坏性变更
+### Breaking Changes · 破坏性变更
 
+Add `BREAKING CHANGE:` when the change is not backward compatible (API signature changes, config renames, behavior changes that break downstream).
 当变更不向后兼容时（API 签名变更、配置重命名、行为变更导致下游破裂），添加 `BREAKING CHANGE:`。
 
 ```
@@ -104,7 +106,7 @@ BREAKING CHANGE: The login endpoint now returns `token` instead of
 feat(api)!: change login response format
 ```
 
-### 关联 Issue
+### Issue References · 关联 Issue
 
 ```
 fix(auth): resolve token expiration race condition
@@ -113,11 +115,11 @@ Closes #234
 Refs #123
 ```
 
-## 分支命名规范
+## Branch Naming · 分支命名规范
 
-支持两种风格，项目统一选择一种：
+Two supported styles — pick one per project · 支持两种风格，项目统一选择一种：
 
-**风格 A：语义前缀（推荐 — dev-pipeline 默认）**
+**Style A: Semantic prefix (recommended — dev-pipeline default) · 风格 A：语义前缀**
 
 | 提交类型 | 分支前缀 | 示例 |
 |---------|---------|------|
@@ -129,7 +131,7 @@ Refs #123
 | `chore` / `build` / `deps` | `chore/` | `chore/update-dependencies` |
 | `test` | `test/` | `test/auth-coverage` |
 
-**风格 B：类型直接对齐（Conventional Commits 生态常见）**
+**Style B: Direct type alignment (common in the Conventional Commits ecosystem) · 风格 B：类型直接对齐**
 
 | 提交类型 | 分支前缀 | 示例 |
 |---------|---------|------|
@@ -137,15 +139,14 @@ Refs #123
 | `fix` | `fix/` | `fix/order-discount-calculation` |
 | `deps` | `deps/` | `deps/bump-axios` |
 
-分支名规则（两种风格通用）：
-- 全小写，kebab-case
-- 简短描述性（3-5 词）
-- 50 字符以内
-```
+Branch name rules (both styles) · 分支名规则（两种风格通用）：
+- All lowercase, kebab-case · 全小写，kebab-case
+- Short and descriptive, 3-5 words · 简短描述性（3-5 词）
+- Max 50 characters · 50 字符以内
 
-## 完整示例
+## Full Examples · 完整示例
 
-### 示例 1：新功能
+### Example 1: New feature · 新功能
 ```
 feat(user): add avatar upload with resize
 
@@ -153,7 +154,7 @@ Supports JPG and PNG uploads up to 5MB.
 Images are automatically resized to 200x200.
 ```
 
-### 示例 2：Bug 修复
+### Example 2: Bug fix · Bug 修复
 ```
 fix(cart): handle expired session during checkout
 
@@ -163,7 +164,7 @@ instead of preserved. Session recovery now restores the cart state.
 Closes #567
 ```
 
-### 示例 3：重构
+### Example 3: Refactor · 重构
 ```
 refactor(payment): replace stripe SDK with payment adapter
 
@@ -173,22 +174,22 @@ BREAKING CHANGE: PaymentService.create() now requires a
 PaymentAdapter instance instead of Stripe API key.
 ```
 
-### 示例 4：文档
+### Example 4: Docs · 文档
 ```
 docs(readme): add local development setup guide
 ```
 
-### 示例 5：简单修复
+### Example 5: Simple fix · 简单修复
 ```
 fix: fix typo in error message
 ```
 
-## 错误模式（避免）
+## Anti-Patterns · 错误模式（避免）
 
-| 错误 | 正确 |
+| Wrong · 错误 | Right · 正确 |
 |------|------|
 | `Added login feature` | `feat(auth): add login feature` |
 | `fix bug` | `fix(api): handle null response body` |
-| `WIP` / `save` / `tmp` | 永远不要提交这样的信息 |
-| `feat: add feature and fix bug and update docs` | 拆分为多个独立提交 |
-| 一个提交包含 50 个不相关的文件 | 按逻辑分组，多次提交 |
+| `WIP` / `save` / `tmp` | Never commit messages like these · 永远不要提交这样的信息 |
+| `feat: add feature and fix bug and update docs` | Split into separate commits · 拆分为多个独立提交 |
+| One commit with 50 unrelated files · 一个提交包含 50 个不相关的文件 | Group logically, commit separately · 按逻辑分组，多次提交 |

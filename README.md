@@ -44,7 +44,7 @@ npx skills add hpuhsp/dev-pipeline -g                              # or via npm
 ## File Structure
 
 ```
-dev-pipeline/
+.claude/skills/dev-pipeline/
 ├── SKILL.md                         # Pipeline orchestrator
 └── references/
     ├── review-agents.md             # 3-agent parallel review prompts
@@ -53,8 +53,15 @@ dev-pipeline/
     ├── test-generation.md           # Test generation guides
     ├── tooling.md                   # Static analysis toolchain
     └── commit-conventions.md        # Conventional Commits spec
+evals/                               # Seeded-defect diffs + expected findings
+CHANGELOG.md                         # Version history
+dev-pipeline.skill                   # Packaged skill (zip), rebuilt via git archive
 ```
+
+## Versioning
+
+See [CHANGELOG.md](CHANGELOG.md). The packaged `dev-pipeline.skill` is kept in sync with the source by CI.
 
 ## License
 
-MIT
+[MIT](LICENSE)

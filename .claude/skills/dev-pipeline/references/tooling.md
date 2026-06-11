@@ -1,5 +1,6 @@
-# 推荐静态分析工具链
+# Recommended Static Analysis Toolchain · 推荐静态分析工具链
 
+When the review phase finds code issues and the project lacks the relevant tooling, suggest installing these industry-standard tools.
 审查阶段检测到代码问题时，如项目缺失相关工具，可建议安装以下推荐的业界标准工具。
 
 ---
@@ -104,7 +105,7 @@ strict = true
 
 ---
 
-## 通用工具（所有语言）
+## Universal Tools (all languages) · 通用工具
 
 | 工具 | 用途 | 适用 |
 |------|------|------|
@@ -117,10 +118,10 @@ strict = true
 
 ---
 
-## 审查时如何使用此文档
+## How to Use This Doc During Review · 审查时如何使用此文档
 
-1. **阶段 0 环境感知** 时，检测项目是否已有 lint/format/typecheck 配置
-2. 如缺失关键工具（如 Java 项目没有 Checkstyle），在审查结果中作为 🟡 建议项标注：
-   - 格式：`TOOLING: 建议添加 [工具名] 用于 [用途]。安装：[安装命令]`
-3. 不要强制安装 — 仅建议，让用户自行权衡
-4. 如项目已有配置，审查时尊重现有工具输出（如 ESLint 报的 error 就是 BLOCKER）
+1. During **Phase 0 environment discovery**, detect whether the project already has lint/format/typecheck configs · 检测项目是否已有 lint/format/typecheck 配置
+2. If a key tool is missing (e.g. a Java project without Checkstyle), add a 🟡 suggestion to the review results · 如缺失关键工具，在审查结果中作为 🟡 建议项标注:
+   - Format · 格式: `TOOLING: suggest adding [tool] for [purpose]. Install: [command]`
+3. Never force installation — suggest only, let the user decide · 不要强制安装，仅建议
+4. If the project already has configs, respect existing tool output (an ESLint error IS a BLOCKER) · 尊重现有工具输出

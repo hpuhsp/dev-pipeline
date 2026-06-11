@@ -1,0 +1,52 @@
+name: validate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate SKILL.md frontmatter
+        run: |
+          SKILL=.claude/skills/dev-pipeline/SKILL.md
+          head -1 "$SKILL" | grep -qx -- '---' || { echo "::error::SKILL.md must start with YAML frontmatter"; exit 1; }
+          for field in name version description; do
+            sed -n '2,/^---$/p' "$SKILL" | grep -q "^${field}:" || { echo "::error::SKILL.md frontmatter missing '${field}'"; exit 1; }
+          done
+          echo "Frontmatter OK"
+
+      - name: Check code fences are balanced in all markdown files
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            count=$(grep -c '^[[:space:]]*```' "$f" || true)
+            if [ $((count % 2)) -ne 0 ]; then
+              echo "::error file=$f::Unbalanced code fences ($count occurrences of \`\`\`)"
+              fail=1
+            fi
+          done < <(git ls-files '*.md')
+          exit $fail
+
+      - name: Check .skill package has no backslash paths
+        run: |
+          if unzip -l dev-pipeline.skill | grep -q '\\'; then
+            echo "::error::dev-pipeline.skill contains backslash path separators — rebuild with forward slashes (git archive)"
+            exit 1
+          fi
+          echo "Path separators OK"
+
+      - name: Check .skill package is in sync with source
+        run: |
+          mkdir -p /tmp/pkg
+          unzip -q dev-pipeline.skill -d /tmp/pkg
+          if ! diff -r /tmp/pkg .claude/skills/dev-pipeline; then
+            echo "::error::dev-pipeline.skill is out of sync with .claude/skills/dev-pipeline — rebuild it:"
+            echo "  git archive HEAD:.claude/skills/dev-pipeline --format=zip -o dev-pipeline.skill"
+            exit 1
+          fi
+          echo "Package in sync"

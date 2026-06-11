@@ -44,7 +44,7 @@ npx skills add hpuhsp/dev-pipeline -g                              # npm 安装
 ## 文件结构
 
 ```
-dev-pipeline/
+.claude/skills/dev-pipeline/
 ├── SKILL.md                         # 主编排器
 └── references/
     ├── review-agents.md             # 3 Agent 并行审查 prompt
@@ -53,8 +53,15 @@ dev-pipeline/
     ├── test-generation.md           # 测试生成指南
     ├── tooling.md                   # 静态分析工具链推荐
     └── commit-conventions.md        # Conventional Commits 规范
+evals/                               # 植入缺陷的样例 diff + 预期发现
+CHANGELOG.md                         # 版本历史
+dev-pipeline.skill                   # 打包产物（zip），由 git archive 重建
 ```
+
+## 版本
+
+见 [CHANGELOG.md](CHANGELOG.md)。打包产物 `dev-pipeline.skill` 由 CI 保证与源文件同步。
 
 ## 许可
 
-MIT
+[MIT](LICENSE)

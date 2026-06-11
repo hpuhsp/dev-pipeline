@@ -1,0 +1,44 @@
+diff --git a/src/main/java/com/example/order/OrderService.java b/src/main/java/com/example/order/OrderService.java
+index 1111111..2222222 100644
+--- a/src/main/java/com/example/order/OrderService.java
++++ b/src/main/java/com/example/order/OrderService.java
+@@ -1,8 +1,42 @@
+ package com.example.order;
+
++import java.text.SimpleDateFormat;
++import java.util.Date;
++import java.util.List;
++
+ public class OrderService extends BaseService {
+
++    // EXPECTED: SimpleDateFormat is not thread-safe — P3C mandates java.time
++    private static final SimpleDateFormat FORMAT = new SimpleDateFormat("yyyy-MM-dd");
++
++    // EXPECTED: missing @Override annotation (P3C mandatory)
++    public String name() {
++        return "order";
++    }
++
++    public String formatIds(List<Long> ids) {
++        // EXPECTED: string concatenation in loop — use StringBuilder
++        String result = "";
++        for (Long id : ids) {
++            result = result + id + ",";
++        }
++        return result;
++    }
++
++    public boolean sameOwner(Order a, Order b) {
++        // EXPECTED: equals on possibly-null value; constant should come first
++        return a.getOwner().equals(b.getOwner());
++    }
++
++    public Date parse(String s) {
++        // EXPECTED: swallowed exception — empty catch block
++        try {
++            return FORMAT.parse(s);
++        } catch (Exception e) {
++        }
++        return null;
++    }
+ }

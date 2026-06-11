@@ -1,5 +1,7 @@
 ---
 name: dev-pipeline
+version: 1.1.0
+license: MIT
 description: >
   Multi-step code delivery pipeline: Code Review → Unit Test → Commit Message → Branch → Commit.
   Use this skill whenever the user has finished coding and needs to commit/ship their changes —
@@ -47,7 +49,7 @@ Before anything else, understand the project state:
 
 1. Run `git status` — scope: staged / working tree / untracked
 2. Run `git diff` and `git diff --staged` — full diff of tracked files
-3. **Untracked files**: If `git status` shows untracked files, run `git add -N <untracked-files>` (intent-to-add, does NOT stage content, only makes the files visible to `git diff`). This ensures new files are included in code review without being committed accidentally.
+3. **Untracked files**: If `git status` shows untracked files, run `git add -N <untracked-files>` (intent-to-add, does NOT stage content, only makes the files visible to `git diff`). This ensures new files are included in code review without being committed accidentally. **Cleanup**: If the pipeline is aborted before Phase 5, remove the intent-to-add entries with `git reset -- <those-files>` so the index is left exactly as found.
 4. **Guard: empty diff** — if both `git diff` and `git diff --staged` are empty AND `git status` shows no untracked files, abort:
    > "No changes detected. Stage your changes first (`git add <files>`), then re-run the pipeline."
 5. **Guard: merge conflict** — run `git ls-files -u` (lists unmerged files, locale-independent). If output is non-empty (merge conflict in progress), abort:
@@ -251,6 +253,8 @@ Generate Conventional Commits messages. Read `references/commit-conventions.md`.
 | Refactor (no behavior change) | `refactor` | `refactor(db): extract query builder` |
 | Performance optimization | `perf` | `perf(list): add virtual scrolling` |
 | Test additions/changes | `test` | `test(auth): add 2FA coverage` |
+| CI/CD config changes | `ci` | `ci: add node 22 to test matrix` |
+| Reverting a previous commit | `revert` | `revert: feat(auth): add JWT token refresh` |
 | Build/config/misc | `build` / `chore` | `chore: update .gitignore` |
 
 ### Scope Inference
@@ -286,7 +290,8 @@ Present to user for confirmation; user can edit directly.
 | `refactor` | `refactor/` | `refactor/query-builder` |
 | `docs` | `docs/` | `docs/install-guide` |
 | `perf` | `perf/` | `perf/virtual-scroll` |
-| `chore` / `build` | `chore/` | `chore/update-deps` |
+| `test` | `test/` | `test/auth-coverage` |
+| `chore` / `build` / `ci` / `deps` | `chore/` | `chore/update-deps` |
 
 ### Steps
 
@@ -314,7 +319,7 @@ Present to user for confirmation; user can edit directly.
 - [ ] Branch selected/created
 - [ ] No sensitive files (`.env`, `.pem`, credentials, etc.)
 
-**Sensitive file check**: Scan files to be committed (from `git status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, remove from staging with `git rm --cached <file>`.
+**Sensitive file check**: Scan files to be committed (from `git status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, and unstage: `git rm --cached <file>` for already-staged files; for untracked files that were never staged, simply exclude them from `git add` (and clear any intent-to-add entry with `git reset -- <file>`).
 
 ### Commit Steps
 
