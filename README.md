@@ -23,6 +23,7 @@ git diff → ① Code Review → ② Unit Test → ③ Commit Message → ④ Br
 - **Conventional Commits**: auto type/scope inference, `deps` type, 70-char subject
 - **Portable**: pure Markdown, zero external dependencies
 - **Fix-First Review**: AUTO-FIX for mechanical issues, ASK for architectural decisions
+- **CodeGraph Integration**: optional impact analysis — auto-detects `.codegraph/`, uses `codegraph affected` for precise regression test targeting
 
 ## Install
 

@@ -105,6 +105,33 @@ strict = true
 
 ---
 
+## CodeGraph (Optional Enhancement) · CodeGraph（可选增强）
+
+CodeGraph CLI builds a code relationship graph from your project, enabling impact analysis and call chain tracing. When integrated, dev-pipeline uses it to identify impacted test files during review and regression testing.
+CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用链追踪。集成后，dev-pipeline 在审查和回归测试阶段使用它识别受影响的测试文件。
+
+| 命令 | 用途 | 说明 |
+|------|------|------|
+| `codegraph affected --stdin --quiet` | Impacted test files | Pipe `git diff --name-only`, returns bare file paths · 管道传入 diff，返回受影响测试文件路径 |
+| `codegraph status --json` | Index health check | Verify `.codegraph/codegraph.db` is fresh · 验证索引状态 |
+| `codegraph impact <symbol> --depth N` | Blast radius | Trace impact of a specific symbol · 追踪符号影响范围 |
+| `codegraph callers/callees <symbol>` | Call chain | Trace upstream/downstream dependencies · 追踪上下游调用链 |
+
+**Canonical pipe pattern** · 标准管道模式:
+
+```bash
+git diff --name-only | codegraph affected --stdin --quiet
+```
+
+**Integration in dev-pipeline** · 在 dev-pipeline 中的集成:
+- Phase 0: Auto-detect `.codegraph/codegraph.db` → set `codegraph_available` flag · 自动检测
+- Phase 1: Impacted test files → appended to review agent prompts as context · 审查上下文
+- Phase 2: Impacted test files → targeted regression test execution · 精准回归测试
+
+**Install**: See [CodeGraph documentation](https://github.com/colbymchenry/codegraph). The `.codegraph/` directory is local and auto-gitignored. · 安装请参考 CodeGraph 文档，`.codegraph/` 目录为本地索引，自动 gitignore。
+
+---
+
 ## Universal Tools (all languages) · 通用工具
 
 | 工具 | 用途 | 适用 |

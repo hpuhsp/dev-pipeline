@@ -283,3 +283,19 @@ class UserServiceTest {
 - JS/TS: `npm test` / `npx jest` / `npx vitest run`
 - Python: `pytest` / `python -m pytest` / `tox`
 - Java: `mvn test` / `gradle test`
+
+### Regression Test Identification · 回归测试识别
+
+**If CodeGraph is available** (`codegraph_available = true`) · CodeGraph 可用时:
+
+- Run `git diff --name-only | codegraph affected --stdin --quiet` to get the precise list of impacted test files
+- Run those specific test files to check for regressions:
+  - JS/TS: `npx jest --testPathPattern "auth|user"` (or pipe affected files directly)
+  - Python: `pytest tests/test_auth.py tests/test_user.py`
+  - Java: `mvn test -Dtest=AuthServiceTest,UserServiceTest`
+- This is more precise than module scoping — only tests whose dependencies changed are executed
+
+**If CodeGraph is not available** · CodeGraph 不可用时:
+
+- Fall back to module/package scoping: `pytest tests/auth/`, `npm test -- --testPathPattern auth`
+- Use `git ls-files '*test*' '*spec*' '*__tests__*'` to discover existing test files in changed areas

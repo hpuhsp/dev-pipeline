@@ -1,6 +1,6 @@
 ---
 name: dev-pipeline
-version: 1.1.0
+version: 1.2.0
 license: MIT
 description: >
   Multi-step code delivery pipeline: Code Review → Unit Test → Commit Message → Branch → Commit.
@@ -73,9 +73,13 @@ Before anything else, understand the project state:
 10. **Guard: submodules** — if `git submodule status` shows submodules, and diff changes include submodule hash changes, note: "Submodule changes detected. Run `git submodule update --init` if needed."
 11. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
 12. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
+13. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— check if `.codegraph/codegraph.db` exists at the project root. If found, set `codegraph_available = true` for downstream phases. If not found, set `codegraph_available = false` — CodeGraph is an optional enhancement, the pipeline runs identically without it. · 检查项目根目录下 `.codegraph/codegraph.db` 是否存在。存在则标记可用；不存在则跳过，管道照常运行。
+    - POSIX: `test -f .codegraph/codegraph.db`
+    - PowerShell: `Test-Path .codegraph/codegraph.db`
+    - **Never fail the pipeline due to CodeGraph absence** — all downstream usage is conditional with fallback. · CodeGraph 缺失时管道不受影响。
 
-Summarize: how many files changed, what type of change, impact scope.
-汇总告知用户：涉及几个文件、什么类型的变化、影响范围。
+Summarize: how many files changed, what type of change, impact scope, and CodeGraph status (available / not detected).
+汇总告知用户：涉及几个文件、什么类型的变化、影响范围、CodeGraph 状态（可用 / 未检测到）。
 
 ### Phase 0.5: Scope Drift Detection (optional) · 范围漂移检测
 
@@ -129,6 +133,8 @@ Read `references/review-agents.md` for the complete agent prompts.
 | `prompt` | Agent 1 template + diff | Agent 2 template + diff | Agent 3 template + diff |
 
 Each agent's `prompt` = the corresponding full template from `references/review-agents.md`, with `{git_diff}` replaced by the actual diff output and `{detected_language_framework}` replaced by the detected tech stack string (e.g. "TypeScript React project with Jest").
+
+**CodeGraph context (if available)**: If `codegraph_available = true`, run `git diff --name-only | codegraph affected --stdin --quiet` to identify impacted test files. Append the result to each agent's prompt per Step 5 in `references/review-agents.md`. If the command fails or returns empty, skip — agent prompts work without this context. · CodeGraph 可用时运行受影响文件分析并追加到 Agent prompt；失败或为空时跳过。
 
 **Partial failure handling**: If one or two agents fail to return results (timeout, error), proceed with partial results. Note the missing perspective in output: "Agent N unavailable — {dimension} not covered."
 
@@ -191,6 +197,8 @@ When the Agent tool is unavailable, perform review yourself. Read `references/re
 
 Review dimensions in order: Correctness → Security → Performance → Maintainability → Consistency. Output format matches 1A, but source labeled "In-Skill Review".
 
+If `codegraph_available = true`, run `git diff --name-only | codegraph affected --stdin --quiet` before starting the review and use the impacted test files list as reference context (see `references/review-checklist.md`).
+
 ---
 
 ### Post-Review Decision · 审查后决策
@@ -232,6 +240,8 @@ Check in priority order:
 - Java/Kotlin: `src/test/java/`, matching package path
 
 **Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the regression check but still run the newly generated test file to verify it passes.
+
+**CodeGraph regression targeting (if available)**: If `codegraph_available = true`, use `git diff --name-only | codegraph affected --stdin --quiet` to identify exactly which existing test files are impacted by the changes. Run those specific files instead of the broader module scoping below. See `references/test-generation.md` for details. · CodeGraph 可用时，使用受影响文件分析精准定位需运行的回归测试。
 
 Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
@@ -374,6 +384,6 @@ If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
 - `references/review-agents.md` — 3 parallel agent prompts + coding standards checks (Claude Code)
 - `references/review-checklist.md` — In-skill serial review checklist (universal fallback)
 - `references/coding-standards.md` — **Authoritative coding standards**: Alibaba P3C, PEP 8, Airbnb JS, Vue 3, uni-app UTS, Android Kotlin, WCAG, Java 17+
-- `references/tooling.md` — **Recommended static analysis toolchain**: ESLint, Ruff, Checkstyle, detekt, Biome, and more
+- `references/tooling.md` — **Recommended static analysis toolchain**: ESLint, Ruff, Checkstyle, detekt, Biome, CodeGraph, and more
 - `references/test-generation.md` — Test generation guides for JS/TS/Python/Java/Kotlin
 - `references/commit-conventions.md` — Conventional Commits spec with dual-style branch naming

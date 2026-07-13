@@ -23,6 +23,7 @@ git diff → ① 代码审查 → ② 单元测试 → ③ Commit Message → �
 - **Conventional Commits**：自动推断 type/scope，支持 `deps` 类型，70 字符 subject
 - **可移植**：纯 Markdown，零外部依赖，复制即用
 - **修复优先审查**：机械问题自动修复 (AUTO-FIX)，架构决策请用户裁定 (ASK)
+- **CodeGraph 集成**：可选的影响分析 — 自动检测 `.codegraph/`，使用 `codegraph affected` 精准定位回归测试范围
 
 ## 安装
 

@@ -15,6 +15,8 @@ To approximate the depth of 3-agent parallel review, run 3 independent passes, e
 Score each pass independently (SCORE: X/10), then aggregate at the end.
 每轮结束后独立打分（SCORE: X/10），最后聚合。
 
+> **CodeGraph context (if available)**: If Phase 0 detected CodeGraph (`codegraph_available = true`), run `git diff --name-only | codegraph affected --stdin --quiet` before starting the review passes. Use the impacted test files list to assess whether changes might break existing tests. · CodeGraph 可用时，先运行受影响文件分析，审查时参考受影响的测试文件列表。
+
 ## Unified Output Format (aligned with 1A) · 统一输出格式
 
 For each finding · 对每个发现使用：

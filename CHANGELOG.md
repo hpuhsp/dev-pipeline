@@ -3,6 +3,22 @@
 All notable changes to the dev-pipeline skill pack are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.2.0] - 2026-07-13
+
+### Added
+- CodeGraph CLI integration (optional enhancement): auto-detect `.codegraph/codegraph.db` in Phase 0, use `codegraph affected --stdin --quiet` to identify impacted test files in Phase 1 (review context) and Phase 2 (regression test targeting)
+- `tooling.md`: CodeGraph section with CLI command reference and integration points
+- `test-generation.md`: Regression test identification using CodeGraph affected analysis
+- `review-agents.md`: Step 5 — conditional CodeGraph context injection into agent prompts
+- `review-checklist.md`: CodeGraph context note for serial review mode
+
+### Changed
+- Phase 0 adds step 13: CodeGraph detection (graceful degradation — pipeline runs identically without CodeGraph)
+- Phase 0 summary now includes CodeGraph status
+- Phase 1 mentions CodeGraph context for both 1A (parallel) and 1B (serial) modes
+- Phase 2 pre-check mentions CodeGraph regression targeting
+- `tooling.md` reference description updated to include CodeGraph
+
 ## [1.1.0] - 2026-06-11
 
 ### Fixed
