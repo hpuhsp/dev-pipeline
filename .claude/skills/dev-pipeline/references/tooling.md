@@ -105,6 +105,43 @@ strict = true
 
 ---
 
+## Swift / iOS
+
+| 工具 | 用途 | 安装/配置 |
+|------|------|----------|
+| **SwiftLint** | Swift 代码规则检查 | `brew install swiftlint` + `.swiftlint.yml` |
+| **SwiftFormat** | Swift 代码格式化 | `brew install swiftformat` |
+| **Periphery** | 死代码检测 | `brew install periphery` → `periphery scan` |
+| **xcodebuild** | 构建/测试 | Xcode 内置 |
+| **xcodegen** | 项目文件生成 | `brew install xcodegen` + `project.yml` |
+
+**推荐组合**：SwiftLint (lint) + SwiftFormat (format) + Periphery (dead code)
+
+**.swiftlint.yml 参考**：
+```yaml
+included:
+  - Sources
+  - Tests
+excluded:
+  - Pods
+  - Carthage
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - override_in_extension
+  - private_outlet
+  - vertical_whitespace_closing_braces
+disabled_rules:
+  - trailing_whitespace
+line_length:
+  warning: 120
+  error: 200
+```
+
+---
+
 ## CodeGraph (Optional Enhancement) · CodeGraph（可选增强）
 
 CodeGraph CLI builds a code relationship graph from your project, enabling impact analysis and call chain tracing. When integrated, dev-pipeline uses it to identify impacted test files during review and regression testing.

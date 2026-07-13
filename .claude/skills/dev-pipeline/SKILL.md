@@ -1,6 +1,6 @@
 ---
 name: dev-pipeline
-version: 1.2.0
+version: 1.3.0
 license: MIT
 description: >
   Multi-step code delivery pipeline: Code Review → Unit Test → Commit Message → Branch → Commit.
@@ -8,7 +8,7 @@ description: >
   it handles the full pipeline from review through commit. Proactively invoke when the user says
   they've completed code changes ("done coding", "ready to commit", "改完了", "提交代码") even
   if they don't explicitly ask for review or testing. Also invoke for any single step: code review
-  against authoritative standards (Alibaba P3C, PEP 8, Airbnb JS, Vue, uni-app UTS), unit test
+  against authoritative standards (Alibaba P3C, PEP 8, Airbnb JS, Vue, uni-app UTS, Swift API Design Guidelines), unit test
   generation with auto-detected frameworks, Conventional Commits messages, branch naming, or the
   complete delivery workflow. Triggers include: "commit my changes", "review my code", "ship it",
   "done coding", "ready to push", "提交代码", "review我的改动", "做code review". Especially
@@ -57,12 +57,14 @@ Before anything else, understand the project state:
 6. **Guard: non-git repository** — if `git status` fails with "not a git repository", abort:
    > "Not a git repository. Run `git init` or navigate to a git project first."
 7. Detect the tech stack:
-   - If `Glob` tool is available, use it to check for key files: `package.json`, `pyproject.toml`, `pom.xml`, `build.gradle`, etc.
-   - **Fallback (no Glob tool)**: Use shell. POSIX (Linux/macOS/Git Bash): `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null`. PowerShell (Windows): `Get-ChildItem -Recurse -Depth 3 -Include "package.json","pyproject.toml","pom.xml","build.gradle","build.gradle.kts" -Name -ErrorAction SilentlyContinue`. If neither works, fall back to checking files individually.
+   - If `Glob` tool is available, use it to check for key files: `package.json`, `pyproject.toml`, `pom.xml`, `build.gradle`, `*.xcodeproj`, `Package.swift`, `Podfile`, etc.
+   - **Fallback (no Glob tool)**: Use shell. POSIX (Linux/macOS/Git Bash): `find . -maxdepth 3 \( -name "package.json" -o -name "pyproject.toml" -o -name "pom.xml" -o -name "build.gradle" -o -name "build.gradle.kts" -o -name "*.xcodeproj" -o -name "Package.swift" -o -name "Podfile" \) 2>/dev/null`. PowerShell (Windows): `Get-ChildItem -Recurse -Depth 3 -Include "package.json","pyproject.toml","pom.xml","build.gradle","build.gradle.kts","*.xcodeproj","Package.swift","Podfile" -Name -ErrorAction SilentlyContinue`. If neither works, fall back to checking files individually.
    - Key file → stack mapping:
      - `package.json`, `tsconfig.json` → JS/TS project
      - `pyproject.toml`, `setup.py`, `requirements*.txt` → Python project
      - `pom.xml`, `build.gradle`, `build.gradle.kts` → Java/Kotlin project
+     - `*.xcodeproj`, `*.xcworkspace`, `Package.swift` → iOS/Swift project
+     - `Podfile` → CocoaPods dependency management (iOS)
      - `.editorconfig`, `.eslintrc.*`, `.prettierrc*` → code style tools
      - Check `vue`, `react`, `next`, `uni-app` deps to confirm frontend framework
 8. **Guard: binary files** — if diff contains "Binary files differ" entries, note them and ask user: "Binary files detected (e.g. images, PDFs). Exclude from review? (they're non-text, un-reviewable)". If user wants them committed, include them in Phase 5 staging but skip review. Never auto-exclude without user confirmation.
@@ -229,7 +231,8 @@ Check in priority order:
 1. `package.json` devDeps: `jest`, `vitest`, `mocha`
 2. `pyproject.toml` / `setup.cfg`: `pytest`, `unittest`
 3. `pom.xml` / `build.gradle`: `junit`, `testng`, `mockito`
-4. Config files: `jest.config.*`, `vitest.config.*`, `pytest.ini`
+4. `*.xcodeproj` / `Package.swift`: XCTest (built-in), Quick/Nimble
+5. Config files: `jest.config.*`, `vitest.config.*`, `pytest.ini`
 
 **Fallback**: If no framework found, ask: "No test framework detected. Which framework do you use? (or skip test generation)"
 
@@ -238,6 +241,7 @@ Check in priority order:
 - JS/TS: `__tests__/` or co-located `*.test.ts`
 - Python: `tests/` directory, `test_*.py`
 - Java/Kotlin: `src/test/java/`, matching package path
+- iOS/Swift: `*Tests.swift` in test target, matching source structure
 
 **Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the regression check but still run the newly generated test file to verify it passes.
 

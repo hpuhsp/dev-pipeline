@@ -267,6 +267,79 @@ class UserServiceTest {
 
 ---
 
+## Swift / iOS
+
+### Framework Detection
+
+1. `*.xcodeproj` / `*.xcworkspace` — XCTest（内置）
+2. `Package.swift` — Swift Package Manager + XCTest
+3. `Podfile` 中检查 `Quick`/`Nimble` — BDD 风格
+4. 检查 test target 中 `*Tests.swift` 文件
+
+### Pattern Examples
+
+```swift
+import XCTest
+@testable import MyModule
+
+final class UserServiceTests: XCTestCase {
+    var sut: UserService!
+    var mockNetwork: MockNetworkClient!
+
+    override func setUp() {
+        super.setUp()
+        mockNetwork = MockNetworkClient()
+        sut = UserService(network: mockNetwork)
+    }
+
+    override func tearDown() {
+        sut = nil
+        mockNetwork = nil
+        super.tearDown()
+    }
+
+    func testCreateUserWithValidInputReturnsUser() {
+        // Arrange
+        let request = CreateUserRequest(email: "alice@example.com", name: "Alice")
+
+        // Act
+        let result = try? sut.createUser(request)
+
+        // Assert
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.email, "alice@example.com")
+    }
+
+    func testCreateUserWithDuplicateEmailThrowsError() {
+        // Arrange
+        mockNetwork.stubbedEmailExists = true
+        let request = CreateUserRequest(email: "existing@example.com", name: "Bob")
+
+        // Act & Assert
+        XCTAssertThrowsError(try sut.createUser(request)) { error in
+            guard let serviceError = error as? UserServiceError else {
+                return XCTFail("Unexpected error type")
+            }
+            XCTAssertEqual(serviceError, .userAlreadyExists)
+        }
+    }
+
+    func testFetchUserAsync() async throws {
+        // Arrange
+        let expectedUser = User(email: "alice@example.com", name: "Alice")
+        mockNetwork.stubbedUser = expectedUser
+
+        // Act
+        let user = try await sut.fetchUser(email: "alice@example.com")
+
+        // Assert
+        XCTAssertEqual(user.name, "Alice")
+    }
+}
+```
+
+---
+
 ## 测试文件放置约定
 
 | 语言 | 源文件 | 测试文件 |
@@ -276,6 +349,7 @@ class UserServiceTest {
 | Python (pytest) | `src/models/user.py` | `tests/test_user.py` 或 `tests/models/test_user.py` |
 | Java (JUnit) | `src/main/java/com/x/User.java` | `src/test/java/com/x/UserTest.java` |
 | Kotlin (JUnit) | `src/main/kotlin/com/x/User.kt` | `src/test/kotlin/com/x/UserTest.kt` |
+| Swift/XCTest | `Sources/Services/UserService.swift` | `Tests/Services/UserServiceTests.swift` |
 
 ## 运行测试
 
@@ -283,6 +357,7 @@ class UserServiceTest {
 - JS/TS: `npm test` / `npx jest` / `npx vitest run`
 - Python: `pytest` / `python -m pytest` / `tox`
 - Java: `mvn test` / `gradle test`
+- Swift: `xcodebuild test -scheme MyScheme` / `swift test`（SPM）
 
 ### Regression Test Identification · 回归测试识别
 

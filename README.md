@@ -18,7 +18,7 @@ git diff → ① Code Review → ② Unit Test → ③ Commit Message → ④ Br
 ## Features
 
 - **Dual-mode Review**: 3-agent parallel review (Claude Code) / in-skill serial fallback (other agents)
-- **6 Coding Standards**: Alibaba P3C, PEP 8, Airbnb JS, Vue 3, uni-app UTS, Android Kotlin
+- **7 Coding Standards**: Alibaba P3C, PEP 8, Airbnb JS, Vue 3, uni-app UTS, Android Kotlin, Swift API Design Guidelines
 - **Auto-detection**: test framework, project tech stack, commit type
 - **Conventional Commits**: auto type/scope inference, `deps` type, 70-char subject
 - **Portable**: pure Markdown, zero external dependencies

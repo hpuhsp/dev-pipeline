@@ -3,6 +3,15 @@
 All notable changes to the dev-pipeline skill pack are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.3.0] - 2026-07-13
+
+### Added
+- iOS/Swift support: Swift API Design Guidelines, coding standards, SwiftUI conventions, memory management
+- `test-generation.md`: Swift/iOS section with XCTest pattern examples (sync + async)
+- `tooling.md`: Swift/iOS section with SwiftLint, SwiftFormat, Periphery, xcodebuild
+- SKILL.md Phase 0: auto-detect `*.xcodeproj`, `*.xcworkspace`, `Package.swift`, `Podfile`
+- SKILL.md Phase 2: XCTest framework detection, `*Tests.swift` output placement
+
 ## [1.2.0] - 2026-07-13
 
 ### Added

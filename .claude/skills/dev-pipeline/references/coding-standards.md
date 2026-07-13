@@ -2,7 +2,7 @@
 
 各语言/平台的权威编码规范参考。审查时根据项目技术栈自动匹配对应的规范进行检查。
 
-> **Token-efficient loading**: This file covers 6 languages (~20KB). When loading, **read only the section matching the detected tech stack** from Phase 0. For example, for a TypeScript React project, read only "JavaScript / TypeScript" + "React" + "Web 前端通用". Skip Java, Kotlin, Python, and UTS sections.
+> **Token-efficient loading**: This file covers 7 languages (~22KB). When loading, **read only the section matching the detected tech stack** from Phase 0. For example, for a TypeScript React project, read only "JavaScript / TypeScript" + "React" + "Web 前端通用". Skip Java, Kotlin, Python, and UTS sections.
 
 ---
 
@@ -322,6 +322,69 @@
 - `LongParameterList` — 参数超过阈值时使用数据类包装
 - `MagicNumber` — 数字字面量应命名
 - `SpreadOperator` — 避免 `*` 展开操作符（性能）
+
+---
+
+## Swift / iOS
+
+### Swift API Design Guidelines（Apple 官方）
+
+**命名**
+- 类型/协议：PascalCase（`UserService`, `Decodable`）
+- 变量/函数/属性：camelCase（`userName`, `fetchData()`）
+- 布尔属性：`is`/`has`/`should` 前缀（`isEnabled`, `hasPermission`）
+- 协议名描述能力而非类型（`Decodable` 而非 `DecodableType`）
+
+**API 设计原则**
+- 优先清晰而非简洁（`model.insert(5, at: 2)` 而非 `model.insert(5, 2)`）
+- 使用参数标签区分用途
+- 可变方法用动词原形，不可变用过去分词（`sort()` vs `sorted()`）
+- 失败的初始化器用 `init?` 而非 `init` + 返回 Optional
+
+### Swift 编码规范
+
+**格式**
+- 缩进：4 空格
+- 行宽建议 ≤ 120 字符
+- 逗号后加空格，逗号前不加
+- 冒号：字典字面量键后加空格，类型声明前加空格
+- `guard` 语句提早返回，减少嵌套
+
+**Optionals**
+- 优先可选绑定（`if let`/`guard let`）而非强制解包（`!`）
+- 避免隐式解包可选（`!`），仅限 IBOutlet
+- 链式可选调用优先于嵌套 `if let`
+
+**错误处理**
+- 使用 `throws` + `Error` 协议而非返回 Optional
+- `Result` 类型用于异步回调场景
+- `do-catch` 捕获具体错误类型，避免空 catch
+
+**并发**
+- 优先 `async/await` 而非 CompletionHandler
+- 使用 `actor` 保护共享可变状态
+- `Task` 用于启动异步任务，`TaskGroup` 用于并行
+- 避免 `DispatchQueue` 当 `async/await` 可用时
+
+### SwiftUI 规范
+
+- View 结构体使用 `private` 内部子 View
+- `@State` 用于本地 UI 状态，`@Binding` 用于父传子
+- `@StateObject` 持有 View 的模型，`@ObservedObject` 用于外部传入
+- `@EnvironmentObject` 用于全局依赖注入
+- 避免在 View 中直接做业务逻辑，抽取到 ViewModel
+
+### 内存管理
+
+- 闭包中引用 `self` 时注意循环引用，使用 `[weak self]`
+- `weak` 用于避免循环引用，`unowned` 用于生命周期相同的引用
+- 在 `deinit` 中清理资源
+
+### 测试
+
+- XCTest（内置）：`XCTestCase` + `setUp`/`tearDown`
+- Quick/Nimble（BDD 风格）：`describe`/`context`/`it`
+- 测试文件：`*Tests.swift`，与源文件同结构放于 test target
 
 ---
 

@@ -18,7 +18,7 @@ git diff → ① 代码审查 → ② 单元测试 → ③ Commit Message → �
 ## 特性
 
 - **双模式审查**：Claude Code 启用 3 Agent 并行审查；其他环境自动退化为 Skill 内串行审查
-- **6 语言编码规范**：阿里 P3C、PEP 8、Airbnb JS、Vue 3、uni-app UTS、Android Kotlin
+- **7 语言编码规范**：阿里 P3C、PEP 8、Airbnb JS、Vue 3、uni-app UTS、Android Kotlin、Swift API Design Guidelines
 - **自动检测**：测试框架、项目技术栈、提交类型
 - **Conventional Commits**：自动推断 type/scope，支持 `deps` 类型，70 字符 subject
 - **可移植**：纯 Markdown，零外部依赖，复制即用
