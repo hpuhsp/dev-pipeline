@@ -1,6 +1,6 @@
 ---
 name: dev-pipeline
-version: 1.3.0
+version: 1.4.0
 license: MIT
 description: >
   Multi-step code delivery pipeline: Code Review → Unit Test → Commit Message → Branch → Commit.
@@ -217,6 +217,29 @@ If `codegraph_available = true`, run `git diff --name-only | codegraph affected 
 
 Generate unit tests based on the changed code. Read `references/test-generation.md` for language-specific guides.
 
+### Test Necessity Check · 测试必要性判定
+
+Before generating tests, evaluate whether the changes warrant new tests · 生成测试前，先判定改动是否需要测试：
+
+**Skip test generation** (no logic changes) when · 以下情况跳过测试生成：
+- All changed files are docs/config/CI: `*.md`, `*.txt`, `.gitignore`, `.github/workflows/*`, `Dockerfile`, `Makefile`
+- All changes are dependency bumps only: `package.json` + `package-lock.json` / `pom.xml` / `build.gradle` (version fields only)
+- All changes are in generated/build artifacts: `dist/`, `build/`, `*.generated.*`, `node_modules/`
+- All changes are purely formatting/whitespace (no logic lines changed)
+
+**Generate tests** when · 以下情况生成测试：
+- Any source file has logic changes (function body, conditional logic, API endpoint, class method)
+- Phase 1 review found correctness or security findings
+- New functions, classes, or API endpoints were added
+- Commit type (inferred from diff) is `feat`, `fix`, `refactor`, or `perf`
+
+**Decision flow** · 判定流程：
+1. Classify changed files by category: source / docs / config / deps / generated
+2. If ALL files are non-source → skip, inform user: "No source code changes detected — skipping test generation" · 全部为非源码改动，跳过测试生成
+3. If source files exist but changes are only comments/imports/whitespace → skip, inform user · 源码文件仅有注释/导入/空白变更，跳过
+4. If source files have logic changes → proceed with test generation · 源码有逻辑变更，继续生成测试
+5. **Even when skipping generation**: if `codegraph_available = true`, still run `codegraph affected --stdin --quiet` to check for regression impact on existing tests · 即使跳过生成，仍检查回归影响
+
 ### Principles
 
 - **Prioritize Phase 1 findings**: Focus test coverage on code paths flagged by review (null handling gaps, edge cases, error paths in correctness findings)
@@ -297,29 +320,37 @@ Present to user for confirmation; user can edit directly.
 
 ## Phase 4: Branch Selection · 分支选择
 
-| Type | Branch Prefix | Example |
-|------|---------|------|
-| `feat` | `feature/` | `feature/jwt-token-refresh` |
-| `fix` | `fix/` | `fix/null-response-handling` |
-| `refactor` | `refactor/` | `refactor/query-builder` |
-| `docs` | `docs/` | `docs/install-guide` |
-| `perf` | `perf/` | `perf/virtual-scroll` |
-| `test` | `test/` | `test/auth-coverage` |
-| `chore` / `build` / `ci` / `deps` | `chore/` | `chore/update-deps` |
+| Type | Branch Prefix | Base Branch | Example |
+|------|---------|------|------|
+| `feat` | `feature/` | `develop` | `feature/oauth2-integration` |
+| `fix` | `bugfix/` | `develop` | `bugfix/order-discount-calculation` |
+| Urgent production fix | `hotfix/` | `main`/`master` | `hotfix/crash-on-startup` |
+| Release preparation | `release/` | `develop` | `release/v1.2.0` |
+| `refactor` | `refactor/` | `develop` | `refactor/query-builder` |
+| `docs` | `docs/` | `develop` | `docs/api-guide` |
+| `perf` | `perf/` | `develop` | `perf/list-virtual-scroll` |
+| `test` | `test/` | `develop` | `test/auth-coverage` |
+| `chore` / `build` / `ci` / `deps` | `chore/` | `develop` | `chore/update-deps` |
 
 ### Steps
 
 1. Check current branch: use `git rev-parse --abbrev-ref HEAD` (compatible back to git 1.6; avoid `git branch --show-current` which requires git 2.22+)
 2. **Guard: detached HEAD** — if result is `HEAD` (not a branch name), warn: "HEAD is detached. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if user confirms.
-3. If already on `feature/*` or `fix/*` matching the change → commit directly
-4. **Guard: type mismatch** — if on `feature/*` branch but change type is `fix` (or vice versa), ask: "You're on a feature branch but this looks like a fix. Create a new branch or commit to the current one?"
-5. If on `main`/`master`/`develop` → recommend creating a new branch
-6. Mixed-type changes (e.g. feat+docs):
+3. **Auto-detect branch convention**: check existing branches `git branch --list 'feature/*' 'bugfix/*' 'hotfix/*'` to determine if project already uses Git-Flow. If existing branches use `fix/` style, respect the existing convention and inform the user. · 自动检测项目已有分支命名规范
+4. **Determine base branch** based on change type · 根据变更类型确定基准分支：
+   - `hotfix/` → branch from `main` or `master` (urgent production fix)
+   - `release/` → branch from `develop`
+   - All others → branch from `develop` (or `main`/`master` if no `develop` branch exists)
+5. If already on a matching branch (e.g. `feature/*` for a `feat` change) → commit directly
+6. **Guard: type mismatch** — if on `feature/*` but change type is `fix`, suggest creating `bugfix/` branch
+7. If on `main`/`master`/`develop` → recommend creating a new branch from the appropriate base
+8. **Hotfix detection**: if current branch is `main`/`master` and change type is `fix`, suggest `hotfix/` instead of `bugfix/` · 在 main/master 上修复 bug 时建议用 hotfix/
+9. Mixed-type changes (e.g. feat+docs):
    - Branch prefix follows the primary change type (usually `feat`)
    - Inform user that docs/chore changes can follow the main branch or be split into a separate PR
-7. **Guard: branch exists** — before creating, check if branch name already exists (`git branch --list <name>`). If it does, append a numeric suffix: `feature/jwt-refresh-2`
-8. Show recommended branch name, ask for confirmation
-9. `git checkout -b <branch-name>` (after confirmation)
+10. **Guard: branch exists** — before creating, check if branch name already exists (`git branch --list <name>`). If it does, append a numeric suffix: `feature/jwt-refresh-2`
+11. Show recommended branch name + base branch, ask for confirmation
+12. `git checkout -b <branch-name>` (after confirmation)
 
 ---
 

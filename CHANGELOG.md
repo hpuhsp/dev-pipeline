@@ -3,6 +3,17 @@
 All notable changes to the dev-pipeline skill pack are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.4.0] - 2026-07-13
+
+### Added
+- Phase 2: Test Necessity Check — auto-skip test generation for docs/config/deps/style-only changes
+- Phase 4: Git-Flow branch naming support — `bugfix/`, `hotfix/`, `release/` branch types with base branch awareness
+- `commit-conventions.md`: Style C (Git-Flow strict) branch naming convention
+
+### Changed
+- Phase 4 branch table now includes base branch column and `bugfix/` prefix (replaces `fix/`)
+- Phase 4 steps updated with auto-detection of existing branch convention and hotfix detection
+
 ## [1.3.0] - 2026-07-13
 
 ### Added

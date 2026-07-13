@@ -139,7 +139,27 @@ Two supported styles — pick one per project · 支持两种风格，项目统�
 | `fix` | `fix/` | `fix/order-discount-calculation` |
 | `deps` | `deps/` | `deps/bump-axios` |
 
-Branch name rules (both styles) · 分支名规则（两种风格通用）：
+**Style C: Git-Flow (strict) · 风格 C：Git-Flow 严格规范**
+
+| 提交类型 | 分支前缀 | 基准分支 | 示例 |
+|---------|---------|---------|------|
+| `feat` | `feature/` | `develop` | `feature/oauth2-integration` |
+| `fix` | `bugfix/` | `develop` | `bugfix/order-discount-calculation` |
+| 紧急生产修复 | `hotfix/` | `main`/`master` | `hotfix/crash-on-startup` |
+| 发布准备 | `release/` | `develop` | `release/v1.2.0` |
+| `refactor` | `refactor/` | `develop` | `refactor/query-builder` |
+| `docs` | `docs/` | `develop` | `docs/api-guide` |
+| `perf` | `perf/` | `develop` | `perf/list-virtual-scroll` |
+| `chore`/`build`/`deps` | `chore/` | `develop` | `chore/update-deps` |
+
+Git-Flow rules (additional) · Git-Flow 额外规则：
+- `bugfix/` replaces `fix/` — Git-Flow uses `bugfix/` for non-urgent bug fixes · Git-Flow 用 `bugfix/` 而非 `fix/`
+- `hotfix/` branches from `main`/`master` — for urgent production fixes only · 仅用于紧急生产修复，从 main/master 分出
+- `release/` branches from `develop` — for release stabilization · 用于发布稳定化，从 develop 分出
+- After merge, feature/bugfix/hotfix branches are deleted · 合并后删除分支
+- `develop` is the integration branch; `main`/`master` is production-ready · develop 为集成分支，main/master 为生产分支
+
+Branch name rules (all styles) · 分支名规则（所有风格通用）：
 - All lowercase, kebab-case · 全小写，kebab-case
 - Short and descriptive, 3-5 words · 简短描述性（3-5 词）
 - Max 50 characters · 50 字符以内
