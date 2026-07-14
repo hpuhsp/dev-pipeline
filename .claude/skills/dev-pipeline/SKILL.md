@@ -1,24 +1,20 @@
 ---
 name: dev-pipeline
-version: 1.4.0
+version: 1.5.0
 license: MIT
 description: >
-  Multi-step code delivery pipeline: Code Review → Unit Test → Commit Message → Branch → Commit.
-  Use this skill whenever the user has finished coding and needs to commit/ship their changes —
-  it handles the full pipeline from review through commit. Proactively invoke when the user says
-  they've completed code changes ("done coding", "ready to commit", "改完了", "提交代码") even
-  if they don't explicitly ask for review or testing. Also invoke for any single step: code review
-  against authoritative standards (Alibaba P3C, PEP 8, Airbnb JS, Vue, uni-app UTS, Swift API Design Guidelines), unit test
-  generation with auto-detected frameworks, Conventional Commits messages, branch naming, or the
-  complete delivery workflow. Triggers include: "commit my changes", "review my code", "ship it",
-  "done coding", "ready to push", "提交代码", "review我的改动", "做code review". Especially
-  valuable for multi-file changes that need systematic review, proper testing, and standardized
-  commit history.
+  Intent-routed code delivery nodes for review, unit tests, commit messages, branch selection,
+  and commit execution. Use for any one of these actions, any explicit combination, or an
+  explicitly requested end-to-end delivery pipeline. Analyze the user's prompt first and execute
+  only the smallest sufficient node set; requests such as "review my code", "generate tests",
+  "write a commit message", "create a branch", or "commit my changes" must not automatically run
+  unrelated earlier or later phases. Supports authoritative review standards, framework-aware
+  tests, Conventional Commits, and repository-aware Git operations including submodules.
 ---
 
 # Dev Pipeline · 开发流水线
 
-All-in-one daily development workflow. In Claude Code: 3-agent parallel review. In other AI agents: in-skill serial review (auto-fallback). Subsequent phases always run serially.
+Composable daily development workflow. First route the user's prompt to the smallest sufficient set of nodes. In Claude Code, review may use 3 parallel agents; other environments use the in-skill serial fallback.
 
 一站式日常开发工作流。Claude Code 环境 3-agent 并行审查，其他环境自动退化为 Skill 内串行审查。
 
@@ -36,14 +32,50 @@ git diff/staged
   └─ ⑤ Commit Execution
 ```
 
-Each phase's output feeds the next. If any phase fails or the user rejects, pause and fix before continuing.
+In Full Pipeline mode, each phase's output feeds the next. In every other mode, execute only the selected target nodes and their minimum safety dependencies. If any selected node fails or the user rejects its output, pause and fix before continuing.
 每一步输出是下一步的输入。遇到失败或用户否定，暂停管道，修复后继续。
+
+---
+
+## Intent Router · 意图路由
+
+Route before repository discovery or phase execution. Treat the workflow as composable nodes, not a mandatory sequence.
+
+### Routing rules
+
+1. **Explicit user intent wins.** Direct requests, exclusions, and named nodes override trigger keywords and defaults. For example, “commit and push, do not review” must not enter Review or Test.
+2. Infer the user's **action**, not merely the presence of Git words. Produce an internal `route_plan` with:
+   - `target_nodes`: nodes that directly satisfy the request;
+   - `supporting_nodes`: only the minimum discovery, validation, or safety nodes required by those targets;
+   - `excluded_nodes`: explicitly rejected or irrelevant nodes;
+   - `reason`: one sentence grounded in the user's prompt.
+3. **Do not fall through** from one completed node to the next phase. Return after all `target_nodes` and `supporting_nodes` complete.
+4. Only explicit full-pipeline intent may select **Full Pipeline**. Never infer it solely from “done coding”, “ready”, “commit”, or a dirty worktree.
+5. If the prompt contains multiple clear actions, select their union and preserve the user's order when dependencies allow it. Example: “review and generate tests” routes to Review + Test, not Commit.
+6. If intent is genuinely ambiguous and different routes would cause materially different mutations, ask one concise question. Otherwise choose the smallest safe route.
+7. References are lazy-loaded: read only the reference files required by selected nodes.
+
+### Prompt-to-node routing table
+
+| Route | Typical prompt intent | `target_nodes` | Minimum `supporting_nodes` |
+|------|------------------------|----------------|----------------------------|
+| **Full Pipeline** | “run the complete pipeline”, “review, test, branch and commit everything” | Review → Test → Message → Branch → Commit | Full Phase 0 |
+| **Review Only** | review, audit, inspect problems, code quality | Review | Lightweight Phase 0 diff discovery |
+| **Test Only** | generate/run unit tests, coverage, test report | Test | Lightweight Phase 0 + framework detection |
+| **Message Only** | write/improve a commit message or changelog | Message | Changed-file summary; diff only when needed |
+| **Branch Only** | create/name/switch a branch | Branch | Repository ownership + current/base branch discovery |
+| **Commit Only** | stage/commit current changes | Commit | Repository ownership + safety checks + Message when no message was supplied |
+| **Combined Nodes** | two or more explicitly named actions | Named nodes only | Union of their minimum dependencies |
+
+“Push”, “create PR”, or other actions outside the defined nodes must not silently trigger Full Pipeline. Perform them only if the environment supports the action and the user explicitly requests it; otherwise state the boundary.
+
+Before acting, briefly state the selected route when useful, but do not ask for confirmation for a read-only route or safe, explicitly requested action.
 
 ---
 
 ## Phase 0: Environment Discovery · 环境感知
 
-> **Mode check first**: Before running discovery, check the [Mode Quick Reference](#mode-quick-reference--模式速查) at the bottom of this file to know which phases are needed. In single-step modes (Review/Test/Message Only), run a lightweight version of Phase 0 — `git diff && git diff --staged`, no framework detection unless needed.
+> **Route check first**: Apply the [Intent Router](#intent-router--意图路由) before discovery. Run full discovery only for Full Pipeline. For a targeted route, execute only the minimum discovery listed in the routing table; do not inspect frameworks, branches, or commit state unless the selected node needs them.
 
 Before anything else, understand the project state:
 
@@ -370,15 +402,17 @@ Present to user for confirmation; user can edit directly.
 
 ## Phase 5: Commit Execution · 执行提交
 
-Phase 5 must inherit `target_repo` from Phase 4. Every Git command in this phase must use the `git -C "<target_repo>" ...` form, including status, diff, staging, unstaging, and commit operations. Never fall back to the pipeline launch directory.
+Phase 5 must inherit `target_repo` from Phase 4 when Branch is selected. In Commit Only mode, resolve `target_repo` directly from Phase 0 repository ownership before any mutation. If multiple repositories own selected changes, stop and ask the user to choose one. Every Git command in this phase must use the `git -C "<target_repo>" ...` form, including status, diff, staging, unstaging, and commit operations. Never fall back to the pipeline launch directory.
 
 ### Pre-Commit Checklist
 
-- [ ] Code Review: no blockers
-- [ ] Tests generated and existing tests pass
+- [ ] Code Review: no blockers, only when Review is selected or explicitly required
+- [ ] Tests pass, only when Test is selected, generated tests changed, or an existing repository hook requires them
 - [ ] Commit message confirmed by user
-- [ ] Branch selected/created
+- [ ] Target repository resolved; branch selected/created only when Branch is selected
 - [ ] No sensitive files (`.env`, `.pem`, credentials, etc.)
+
+Do not add Review, Test, or Branch to `supporting_nodes` merely to satisfy this checklist. Commit Only intentionally skips them unless one of the conditions above applies.
 
 **Sensitive file check**: Scan files to be committed (from `git -C "<target_repo>" status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, and unstage with `git -C "<target_repo>" rm --cached <file>` for already-staged files; for untracked files that were never staged, exclude them from `git -C "<target_repo>" add` and clear any intent-to-add entry with `git -C "<target_repo>" reset -- <file>`.
 
@@ -422,11 +456,13 @@ If `git -C "<target_repo>" commit` fails due to pre-commit hooks (linter, format
 
 | Mode | Triggers | Behavior |
 |------|--------|------|
-| **Full Pipeline** | "commit my changes", "ship it", "提交代码" | Phase 0→1→2→3→4→5 |
-| **Quick Mode** | "quick commit", "skip review", "快速提交" | Phase 0→3→4→5 only |
-| **Review Only** | "review my changes", "code review" | Phase 1 only |
-| **Test Only** | "generate tests", "生成测试" | Phase 2 only |
-| **Message Only** | "write commit message", "生成commit message" | Phase 3 only |
+| **Full Pipeline** | "run the complete pipeline", "review, test, branch and commit" | Phase 0→1→2→3→4→5 |
+| **Review Only** | "review my changes", "code review" | Lightweight Phase 0 + Phase 1; stop |
+| **Test Only** | "generate tests", "run coverage" | Lightweight Phase 0 + Phase 2; stop |
+| **Message Only** | "write commit message", "update changelog" | Change summary + Phase 3; stop |
+| **Branch Only** | "create a feature branch", "name this branch" | Repository discovery + Phase 4; stop |
+| **Commit Only** | "commit my changes", "stage and commit" | Repository/safety discovery + Phase 3 if needed + Phase 5; stop |
+| **Combined Nodes** | "review and test", "branch then commit" | Explicit nodes + minimum dependencies; stop |
 
 ---
 

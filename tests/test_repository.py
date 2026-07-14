@@ -8,6 +8,30 @@ SKILL_ROOT = ROOT / ".claude" / "skills" / "dev-pipeline"
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_skill_routes_user_intent_without_implicit_pipeline_fallthrough(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        routing = skill.split("## Intent Router", 1)[1].split("## Phase 0:", 1)[0]
+
+        required_rules = (
+            "Explicit user intent wins",
+            "route_plan",
+            "target_nodes",
+            "supporting_nodes",
+            "Do not fall through",
+            "Full Pipeline",
+            "Review Only",
+            "Test Only",
+            "Message Only",
+            "Branch Only",
+            "Commit Only",
+        )
+        for rule in required_rules:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, routing)
+
+        self.assertIn("Only explicit full-pipeline intent", routing)
+        self.assertNotIn("Subsequent phases always run serially", skill)
+
     def test_ci_uses_change_aware_runner_and_publishes_reports(self):
         workflow = (ROOT / ".github" / "workflows" / "validate.yml").read_text(
             encoding="utf-8"

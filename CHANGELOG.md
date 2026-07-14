@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Changed
+
+- Added prompt-intent routing so review, test, message, branch, and commit requests execute only their target nodes and minimum safety dependencies instead of falling through the full pipeline.
+- Full Pipeline now requires explicit end-to-end intent; references and environment discovery are loaded lazily for lower token usage.
+
 ### Fixed
 - Route Branch Selection and Commit Execution to the Git repository that owns the reviewed changes instead of the pipeline launch directory.
 - Stop for user selection when changes span multiple repositories; distinguish independent submodules from parent-owned Git subtree paths and exclude stash entries from repository detection.

@@ -1,6 +1,12 @@
 {
   "requirements": [
     {
+      "id": "prompt-intent-node-routing",
+      "dimension": "workflow-routing",
+      "tiers": ["unit", "agent-eval"],
+      "tests": ["RepositoryContractTests.test_skill_routes_user_intent_without_implicit_pipeline_fallthrough"]
+    },
+    {
       "id": "codegraph-staged-and-unstaged",
       "dimension": "change-detection",
       "tiers": ["unit", "agent-eval"],
