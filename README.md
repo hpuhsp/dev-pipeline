@@ -1,67 +1,192 @@
 # Dev Pipeline
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/hpuhsp/dev-pipeline.svg)](https://github.com/hpuhsp/dev-pipeline/stargazers)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](CHANGELOG.md)
+[![Validation](https://github.com/hpuhsp/dev-pipeline/actions/workflows/validate.yml/badge.svg)](https://github.com/hpuhsp/dev-pipeline/actions/workflows/validate.yml)
 
-[中文版](README_zh.md) | English
+[中文说明](README_zh.md)
 
----
+Dev Pipeline is an intent-routed delivery Skill for Claude Code, Codex, and other AI coding agents. It provides composable nodes for code review, unit testing, commit messages, branch selection, and commit execution without forcing every request through an end-to-end workflow.
 
-Multi-step code delivery skill pack for Claude Code and other AI Agents.
+## Why Dev Pipeline
 
-## Pipeline
+Traditional delivery prompts often trigger more work than the user requested. Dev Pipeline analyzes the prompt first, selects the smallest sufficient node set, and stops when those nodes are complete.
 
+```text
+User prompt
+    |
+    v
+Intent Router
+    |
+    +-- Review
+    +-- Test
+    +-- Message
+    +-- Branch
+    +-- Commit
+    `-- Explicit combinations or Full Pipeline
 ```
-git diff → ① Code Review → ② Unit Test → ③ Commit Message → ④ Branch → ⑤ Commit
+
+Only explicit end-to-end intent selects the full sequence:
+
+```text
+Review -> Test -> Message -> Branch -> Commit
 ```
 
-## Features
+## Routing Examples
 
-- **Dual-mode Review**: 3-agent parallel review (Claude Code) / in-skill serial fallback (other agents)
-- **7 Coding Standards**: Alibaba P3C, PEP 8, Airbnb JS, Vue 3, uni-app UTS, Android Kotlin, Swift API Design Guidelines
-- **Auto-detection**: test framework, project tech stack, commit type
-- **Conventional Commits**: auto type/scope inference, `deps` type, 70-char subject
-- **Portable**: pure Markdown, zero external dependencies
-- **Fix-First Review**: AUTO-FIX for mechanical issues, ASK for architectural decisions
-- **CodeGraph Integration**: optional impact analysis — auto-detects `.codegraph/`, uses `codegraph affected` for precise regression test targeting
+| Prompt | Selected route | What does not run |
+|---|---|---|
+| `review my changes` | Review | Test, Message, Branch, Commit |
+| `generate tests and coverage report` | Test | Review, Branch, Commit |
+| `write a commit message` | Message | Review, Test, Branch, Commit |
+| `create a feature branch` | Branch | Review, Test, Commit |
+| `commit my changes` | Commit + minimum safety checks | Review, Test, Branch unless required |
+| `review and test these changes` | Review + Test | Message, Branch, Commit |
+| `run the complete delivery pipeline` | Full Pipeline | Nothing |
 
-## Install
+Explicit exclusions always win. For example, `commit and push, do not review` never enters the Review or Test nodes.
+
+## Core Capabilities
+
+### Intent-routed workflow
+
+- Produces target, supporting, and excluded node decisions from the user prompt.
+- Prevents implicit fall-through from one numbered phase to the next.
+- Loads environment context and reference files only when selected nodes need them.
+- Treats push and pull-request creation as explicit extension actions, not automatic pipeline phases.
+
+### Code review
+
+- Uses three parallel review perspectives when an agent tool is available and the diff is large enough.
+- Falls back to an in-skill serial review for small diffs or environments without sub-agents.
+- Covers correctness, security, performance, maintainability, and project consistency.
+- Supports Alibaba P3C, PEP 8, Airbnb JavaScript, Vue 3, uni-app UTS, Android Kotlin, Swift API Design Guidelines, and WCAG guidance.
+- Applies confidence gating and separates mechanical auto-fixes from decisions that need user approval.
+
+### Change-aware testing
+
+The dependency-free test runner classifies changes into the cheapest safe tier:
+
+| Tier | Typical changes | Behavior |
+|---|---|---|
+| `structural` | README, changelog, license, or `docs/` only | Skip unit tests; keep structural validation |
+| `unit` | Skill source, scripts, tests, CI, package, or unknown files | Run deterministic affected tests |
+| `agent-eval` | Review prompts, checklists, or evaluation fixtures | Run deterministic tests and recommend opt-in Agent evaluation |
+
+Reports are emitted as JSON and Markdown and include:
+
+- total, passed, failed, errors, skipped, pass rate, and duration;
+- behavioral requirement coverage and scenario coverage;
+- failed requirement or scenario identifiers;
+- Agent evaluation status, token budget, and actual token usage.
+
+Ordinary deterministic validation consumes zero Agent-evaluation tokens.
+
+### Repository-aware Git operations
+
+- Resolves the Git worktree that owns each changed path.
+- Treats Git submodules as independent repositories.
+- Treats a Git subtree without independent `.git` metadata as part of its parent repository.
+- Stops for user selection when selected changes span multiple repositories.
+- Scopes branch and commit commands with `git -C <target_repo>`.
+- Never runs `git stash`, reads `refs/stash`, or analyzes stashed content.
+
+### Safe commit delivery
+
+- Generates Conventional Commit messages from the actual change type and scope.
+- Detects Git-Flow and conventional branch naming styles.
+- Uses selective staging instead of `git add .` or `git add -A`.
+- Blocks common credential, private-key, and sensitive-file patterns.
+- Handles pre-commit hook failures by separating auto-fixable, manual, and infrastructure errors.
+
+## Installation
+
+### Install from GitHub
 
 ```bash
-cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline   # user-level
-npx skills add hpuhsp/dev-pipeline -g                              # or via npm
+npx skills add hpuhsp/dev-pipeline -g
 ```
+
+### Install manually
+
+Project-level installation:
+
+```bash
+git clone https://github.com/hpuhsp/dev-pipeline.git
+cp -r dev-pipeline/.claude/skills/dev-pipeline <your-project>/.claude/skills/dev-pipeline
+```
+
+User-level installation:
+
+```bash
+cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline
+```
+
+The repository also contains `dev-pipeline.skill`, a portable packaged artifact kept in sync with the source by validation.
 
 ## Usage
 
-| Mode | Triggers |
-|------|----------|
-| Full Pipeline | `commit my changes`, `ship it`, `done coding` |
-| Code Review | `review my code`, `code review` |
-| Test Generation | `generate tests` |
-| Commit Message | `write commit message` |
-| Quick Mode | `quick commit`, `skip review` |
+Ask for exactly the action you want:
 
-## File Structure
-
-```
-.claude/skills/dev-pipeline/
-├── SKILL.md                         # Pipeline orchestrator
-└── references/
-    ├── review-agents.md             # 3-agent parallel review prompts
-    ├── review-checklist.md          # In-skill serial review fallback
-    ├── coding-standards.md          # Authoritative coding standards
-    ├── test-generation.md           # Test generation guides
-    ├── tooling.md                   # Static analysis toolchain
-    └── commit-conventions.md        # Conventional Commits spec
-evals/                               # Seeded-defect diffs + expected findings
-CHANGELOG.md                         # Version history
-dev-pipeline.skill                   # Packaged skill (zip), rebuilt via git archive
+```text
+Review my current changes for correctness and security.
+Generate unit tests and a coverage report for this change.
+Write a Conventional Commit message for the staged files.
+Create an appropriate branch in the repository that owns these changes.
+Commit the current changes, but do not run review or tests.
+Run the complete pipeline and stop if any validation fails.
 ```
 
-## Versioning
+The Skill infers the route from the prompt. No slash command is required.
 
-See [CHANGELOG.md](CHANGELOG.md). The packaged `dev-pipeline.skill` is kept in sync with the source by CI.
+## Validation
+
+Run the complete deterministic suite:
+
+```bash
+python scripts/test_runner.py --all
+```
+
+Run change-aware validation for the current working tree:
+
+```bash
+python scripts/test_runner.py --report-dir artifacts/test-results
+```
+
+GitHub Actions runs the same change-aware validation and uploads the JSON and Markdown reports.
+
+## Project Structure
+
+```text
+.
+|-- .claude/skills/dev-pipeline/
+|   |-- SKILL.md
+|   `-- references/
+|       |-- coding-standards.md
+|       |-- commit-conventions.md
+|       |-- review-agents.md
+|       |-- review-checklist.md
+|       |-- test-generation.md
+|       `-- tooling.md
+|-- scripts/
+|   `-- test_runner.py
+|-- tests/
+|   |-- coverage_manifest.json
+|   |-- test_repository.py
+|   `-- test_test_runner.py
+|-- docs/superpowers/
+|-- dev-pipeline.skill
+|-- CHANGELOG.md
+`-- LICENSE
+```
+
+## Design Principles
+
+- Explicit user intent has priority over keyword heuristics.
+- Use the smallest safe route and avoid unnecessary context loading.
+- Prefer deterministic validation over model-based evaluation in ordinary CI.
+- Preserve repository boundaries and never inspect stashed work.
+- Require fresh evidence before reporting success.
 
 ## License
 
