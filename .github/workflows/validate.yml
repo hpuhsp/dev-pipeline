@@ -10,6 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run change-aware tests and build reports
+        env:
+          TEST_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/test_runner.py --report-dir artifacts/test-results
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results
 
       - name: Validate SKILL.md frontmatter
         run: |

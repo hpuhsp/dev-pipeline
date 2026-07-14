@@ -149,7 +149,7 @@ CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用
 
 | 命令 | 用途 | 说明 |
 |------|------|------|
-| `codegraph affected --stdin --quiet` | Impacted test files | Pipe `git diff --name-only`, returns bare file paths · 管道传入 diff，返回受影响测试文件路径 |
+| `codegraph affected --stdin --quiet` | Impacted test files | Pipe `git diff HEAD --name-only` to include staged and unstaged changes; returns bare file paths · 管道传入已暂存和未暂存变更，返回受影响测试文件路径 |
 | `codegraph status --json` | Index health check | Verify `.codegraph/codegraph.db` is fresh · 验证索引状态 |
 | `codegraph impact <symbol> --depth N` | Blast radius | Trace impact of a specific symbol · 追踪符号影响范围 |
 | `codegraph callers/callees <symbol>` | Call chain | Trace upstream/downstream dependencies · 追踪上下游调用链 |
@@ -157,7 +157,7 @@ CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用
 **Canonical pipe pattern** · 标准管道模式:
 
 ```bash
-git diff --name-only | codegraph affected --stdin --quiet
+git diff HEAD --name-only | codegraph affected --stdin --quiet
 ```
 
 **Integration in dev-pipeline** · 在 dev-pipeline 中的集成:

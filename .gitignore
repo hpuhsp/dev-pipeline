@@ -12,6 +12,7 @@ __pycache__/
 
 # Workspace (eval artifacts)
 dev-pipeline-workspace/
+artifacts/
 
 # Zip artifacts (keep .skill)
 *.zip

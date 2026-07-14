@@ -363,7 +363,7 @@ final class UserServiceTests: XCTestCase {
 
 **If CodeGraph is available** (`codegraph_available = true`) · CodeGraph 可用时:
 
-- Run `git diff --name-only | codegraph affected --stdin --quiet` to get the precise list of impacted test files
+- Run `git diff HEAD --name-only | codegraph affected --stdin --quiet` to get the precise list of impacted test files from both staged and unstaged changes
 - Run those specific test files to check for regressions:
   - JS/TS: `npx jest --testPathPattern "auth|user"` (or pipe affected files directly)
   - Python: `pytest tests/test_auth.py tests/test_user.py`

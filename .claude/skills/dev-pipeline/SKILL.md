@@ -72,10 +72,11 @@ Before anything else, understand the project state:
    - Warn: "Large diff detected (N lines). Review quality may degrade."
    - **Auto-fallback**: Force 1B serial review mode (even if Agent tool is available) — serial review is more token-efficient for large diffs and avoids 3× context duplication.
    - If diff > 1000 lines: additionally suggest file-by-file chunked review ("Review 5 files at a time?")
-10. **Guard: submodules** — if `git submodule status` shows submodules, and diff changes include submodule hash changes, note: "Submodule changes detected. Run `git submodule update --init` if needed."
-11. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
-12. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
-13. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— check if `.codegraph/codegraph.db` exists at the project root. If found, set `codegraph_available = true` for downstream phases. If not found, set `codegraph_available = false` — CodeGraph is an optional enhancement, the pipeline runs identically without it. · 检查项目根目录下 `.codegraph/codegraph.db` 是否存在。存在则标记可用；不存在则跳过，管道照常运行。
+10. **Guard: submodules** — if `git submodule status` shows submodules, inspect each initialized submodule recursively with repository-scoped commands. Record which repository root owns every reviewed change. A dirty gitlink in the parent is not a direct parent change when the actual edits are inside that submodule.
+11. **Repository ownership** — for every reviewed path, resolve its owning worktree with `git -C "<containing-directory>" rev-parse --show-toplevel`, deduplicate the roots, and carry the resulting `changed_repositories` into Phases 4 and 5. A Git subtree without independent `.git` metadata belongs to its parent repository. Do not run `git stash`, inspect `refs/stash`, or include stashed changes in `changed_repositories`.
+12. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
+13. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
+14. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— check if `.codegraph/codegraph.db` exists at the selected repository root. If found, set `codegraph_available = true` for downstream phases. If not found, set `codegraph_available = false` — CodeGraph is an optional enhancement, the pipeline runs identically without it. · 检查选定仓库根目录下 `.codegraph/codegraph.db` 是否存在。存在则标记可用；不存在则跳过，管道照常运行。
     - POSIX: `test -f .codegraph/codegraph.db`
     - PowerShell: `Test-Path .codegraph/codegraph.db`
     - **Never fail the pipeline due to CodeGraph absence** — all downstream usage is conditional with fallback. · CodeGraph 缺失时管道不受影响。
@@ -136,7 +137,7 @@ Read `references/review-agents.md` for the complete agent prompts.
 
 Each agent's `prompt` = the corresponding full template from `references/review-agents.md`, with `{git_diff}` replaced by the actual diff output and `{detected_language_framework}` replaced by the detected tech stack string (e.g. "TypeScript React project with Jest").
 
-**CodeGraph context (if available)**: If `codegraph_available = true`, run `git diff --name-only | codegraph affected --stdin --quiet` to identify impacted test files. Append the result to each agent's prompt per Step 5 in `references/review-agents.md`. If the command fails or returns empty, skip — agent prompts work without this context. · CodeGraph 可用时运行受影响文件分析并追加到 Agent prompt；失败或为空时跳过。
+**CodeGraph context (if available)**: If `codegraph_available = true`, run `git diff HEAD --name-only | codegraph affected --stdin --quiet` to identify impacted test files from both staged and unstaged changes. Append the result to each agent's prompt per Step 5 in `references/review-agents.md`. If the command fails or returns empty, skip — agent prompts work without this context. · CodeGraph 可用时分析已暂存和未暂存变更的受影响文件，并追加到 Agent prompt；失败或为空时跳过。
 
 **Partial failure handling**: If one or two agents fail to return results (timeout, error), proceed with partial results. Note the missing perspective in output: "Agent N unavailable — {dimension} not covered."
 
@@ -199,7 +200,7 @@ When the Agent tool is unavailable, perform review yourself. Read `references/re
 
 Review dimensions in order: Correctness → Security → Performance → Maintainability → Consistency. Output format matches 1A, but source labeled "In-Skill Review".
 
-If `codegraph_available = true`, run `git diff --name-only | codegraph affected --stdin --quiet` before starting the review and use the impacted test files list as reference context (see `references/review-checklist.md`).
+If `codegraph_available = true`, run `git diff HEAD --name-only | codegraph affected --stdin --quiet` before starting the review and use the impacted test files list as reference context (see `references/review-checklist.md`).
 
 ---
 
@@ -219,26 +220,20 @@ Generate unit tests based on the changed code. Read `references/test-generation.
 
 ### Test Necessity Check · 测试必要性判定
 
-Before generating tests, evaluate whether the changes warrant new tests · 生成测试前，先判定改动是否需要测试：
+Before generating or running tests, produce a `test_decision` from staged, unstaged, and untracked files. Never inspect Git stash. Use the cheapest safe tier · 生成或运行测试前，根据已暂存、未暂存和未跟踪文件生成 `test_decision`，禁止读取 stash，并选择最低成本的安全层级：
 
-**Skip test generation** (no logic changes) when · 以下情况跳过测试生成：
-- All changed files are docs/config/CI: `*.md`, `*.txt`, `.gitignore`, `.github/workflows/*`, `Dockerfile`, `Makefile`
-- All changes are dependency bumps only: `package.json` + `package-lock.json` / `pom.xml` / `build.gradle` (version fields only)
-- All changes are in generated/build artifacts: `dist/`, `build/`, `*.generated.*`, `node_modules/`
-- All changes are purely formatting/whitespace (no logic lines changed)
+| Tier | Change pattern | Required action |
+|------|----------------|-----------------|
+| `structural` | README, changelog, license, or `docs/` only | Skip unit tests; still run frontmatter, Markdown, link, and package validation |
+| `unit` | Skill source, scripts, tests, CI, package, or unknown files | Run deterministic affected tests; generate tests for changed logic when needed |
+| `agent-eval` | Review prompts/checklists or seeded eval fixtures | Run deterministic tests and recommend Agent evaluation; do not run it automatically in ordinary CI |
 
-**Generate tests** when · 以下情况生成测试：
-- Any source file has logic changes (function body, conditional logic, API endpoint, class method)
-- Phase 1 review found correctness or security findings
-- New functions, classes, or API endpoints were added
-- Commit type (inferred from diff) is `feat`, `fix`, `refactor`, or `perf`
-
-**Decision flow** · 判定流程：
-1. Classify changed files by category: source / docs / config / deps / generated
-2. If ALL files are non-source → skip, inform user: "No source code changes detected — skipping test generation" · 全部为非源码改动，跳过测试生成
-3. If source files exist but changes are only comments/imports/whitespace → skip, inform user · 源码文件仅有注释/导入/空白变更，跳过
-4. If source files have logic changes → proceed with test generation · 源码有逻辑变更，继续生成测试
-5. **Even when skipping generation**: if `codegraph_available = true`, still run `codegraph affected --stdin --quiet` to check for regression impact on existing tests · 即使跳过生成，仍检查回归影响
+Rules:
+1. Treat `.claude/skills/**/*.md` as product source, not documentation.
+2. Default unknown files to `unit`; false negatives cost more than a small deterministic test run.
+3. Run Agent evaluation only when explicitly requested, on a scheduled evaluation, or before a release. Record its token budget and actual token use.
+4. If Phase 1 found a correctness/security issue or logic changed, generate targeted tests using the existing framework.
+5. Even when generation is skipped, run affected regression tests when CodeGraph identifies them.
 
 ### Principles
 
@@ -268,9 +263,21 @@ Check in priority order:
 
 **Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the regression check but still run the newly generated test file to verify it passes.
 
-**CodeGraph regression targeting (if available)**: If `codegraph_available = true`, use `git diff --name-only | codegraph affected --stdin --quiet` to identify exactly which existing test files are impacted by the changes. Run those specific files instead of the broader module scoping below. See `references/test-generation.md` for details. · CodeGraph 可用时，使用受影响文件分析精准定位需运行的回归测试。
+**CodeGraph regression targeting (if available)**: If `codegraph_available = true`, use `git diff HEAD --name-only | codegraph affected --stdin --quiet` to identify exactly which existing test files are impacted by staged and unstaged changes. Run those specific files instead of the broader module scoping below. See `references/test-generation.md` for details. · CodeGraph 可用时，分析已暂存和未暂存变更，精准定位需运行的回归测试。
 
 Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
+
+### Test Result Report · 测试结果报告
+
+Always report the following dimensions, including when unit tests are skipped:
+
+- `test_decision`: selected tier, changed files, reasons, and whether unit/Agent evaluation ran;
+- execution: total, passed, failed, errors, skipped, pass rate, and duration;
+- coverage: requirement coverage and scenario coverage. For instruction-only skills, prefer behavioral coverage over misleading Markdown line coverage;
+- quality: failed requirement/scenario identifiers and report artifact locations;
+- cost: Agent evaluation status, token budget, and actual token usage (zero for deterministic-only runs).
+
+Emit a concise console summary plus machine-readable JSON and human-readable Markdown reports. In CI, publish the Markdown to the step summary and upload both report files as artifacts.
 
 ---
 
@@ -334,27 +341,36 @@ Present to user for confirmation; user can edit directly.
 
 ### Steps
 
-1. Check current branch: use `git rev-parse --abbrev-ref HEAD` (compatible back to git 1.6; avoid `git branch --show-current` which requires git 2.22+)
-2. **Guard: detached HEAD** — if result is `HEAD` (not a branch name), warn: "HEAD is detached. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if user confirms.
-3. **Auto-detect branch convention**: check existing branches `git branch --list 'feature/*' 'bugfix/*' 'hotfix/*'` to determine if project already uses Git-Flow. If existing branches use `fix/` style, respect the existing convention and inform the user. · 自动检测项目已有分支命名规范
-4. **Determine base branch** based on change type · 根据变更类型确定基准分支：
+1. **Resolve the target repository before inspecting branches**:
+   - Start from the `changed_repositories` recorded in Phase 0 and retain only repositories that own changes selected for this commit.
+   - A Git submodule is an independent repository. A Git subtree without its own `.git` metadata belongs to the parent repository.
+   - Do not run `git stash`, read `refs/stash`, or use stashed content to select a repository.
+   - If exactly one repository remains, assign its absolute worktree root to `target_repo`.
+   - If changes belong to multiple repositories, stop and ask the user to select one repository; list each repository and its changed paths. Never create branches in multiple repositories automatically.
+2. **Scope every branch command** — from this point onward, every Git query or mutation in this phase must use `git -C "<target_repo>" ...`. Never rely on the pipeline launch directory.
+3. Check current branch with `git -C "<target_repo>" rev-parse --abbrev-ref HEAD` (compatible back to Git 1.6; avoid `git branch --show-current`, which requires Git 2.22+).
+4. **Guard: detached HEAD** — if the result is `HEAD`, warn: "HEAD is detached in <target_repo>. Creating a branch from a detached state may lose work. Create a branch from the current commit first?" Proceed only if the user confirms.
+5. **Auto-detect branch convention**: run `git -C "<target_repo>" branch --list 'feature/*' 'bugfix/*' 'hotfix/*' 'fix/*'` to determine whether the selected repository uses Git-Flow or the conventional `fix/` style. Respect its existing convention and inform the user. · 自动检测并遵循目标仓库已有的 Git-Flow 或 `fix/` 分支命名规范
+6. **Determine base branch** based on change type in `target_repo` · 根据目标仓库中的变更类型确定基准分支：
    - `hotfix/` → branch from `main` or `master` (urgent production fix)
    - `release/` → branch from `develop`
    - All others → branch from `develop` (or `main`/`master` if no `develop` branch exists)
-5. If already on a matching branch (e.g. `feature/*` for a `feat` change) → commit directly
-6. **Guard: type mismatch** — if on `feature/*` but change type is `fix`, suggest creating `bugfix/` branch
-7. If on `main`/`master`/`develop` → recommend creating a new branch from the appropriate base
-8. **Hotfix detection**: if current branch is `main`/`master` and change type is `fix`, suggest `hotfix/` instead of `bugfix/` · 在 main/master 上修复 bug 时建议用 hotfix/
-9. Mixed-type changes (e.g. feat+docs):
+7. If already on a matching branch (e.g. `feature/*` for a `feat` change) → commit directly.
+8. **Guard: type mismatch** — if on `feature/*` but the change type is `fix`, suggest creating a `bugfix/` branch.
+9. If on `main`/`master`/`develop` → recommend creating a new branch from the appropriate base.
+10. **Hotfix detection**: if the current branch is `main`/`master` and the change type is `fix`, suggest `hotfix/` instead of `bugfix/` · 在 main/master 上修复 bug 时建议用 hotfix/
+11. Mixed-type changes (e.g. feat+docs):
    - Branch prefix follows the primary change type (usually `feat`)
    - Inform user that docs/chore changes can follow the main branch or be split into a separate PR
-10. **Guard: branch exists** — before creating, check if branch name already exists (`git branch --list <name>`). If it does, append a numeric suffix: `feature/jwt-refresh-2`
-11. Show recommended branch name + base branch, ask for confirmation
-12. `git checkout -b <branch-name>` (after confirmation)
+12. **Guard: branch exists** — check with `git -C "<target_repo>" branch --list <branch-name>`. If it exists, append a numeric suffix such as `feature/jwt-refresh-2`.
+13. Show `target_repo`, the recommended branch name, and the base branch together; ask for confirmation.
+14. Run `git -C "<target_repo>" checkout -b <branch-name>` only after confirmation.
 
 ---
 
 ## Phase 5: Commit Execution · 执行提交
+
+Phase 5 must inherit `target_repo` from Phase 4. Every Git command in this phase must use the `git -C "<target_repo>" ...` form, including status, diff, staging, unstaging, and commit operations. Never fall back to the pipeline launch directory.
 
 ### Pre-Commit Checklist
 
@@ -364,21 +380,21 @@ Present to user for confirmation; user can edit directly.
 - [ ] Branch selected/created
 - [ ] No sensitive files (`.env`, `.pem`, credentials, etc.)
 
-**Sensitive file check**: Scan files to be committed (from `git status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, and unstage: `git rm --cached <file>` for already-staged files; for untracked files that were never staged, simply exclude them from `git add` (and clear any intent-to-add entry with `git reset -- <file>`).
+**Sensitive file check**: Scan files to be committed (from `git -C "<target_repo>" status --short`) AND their diff content for: `.env` (unless `.env.example`), `*.pem`, `*.p12`, `*.pfx`, `credentials*`, `*secret*`, `*password*`, `BEGIN RSA PRIVATE KEY`, `BEGIN OPENSSH PRIVATE KEY`. If found → block commit, warn user, and unstage with `git -C "<target_repo>" rm --cached <file>` for already-staged files; for untracked files that were never staged, exclude them from `git -C "<target_repo>" add` and clear any intent-to-add entry with `git -C "<target_repo>" reset -- <file>`.
 
 ### Commit Steps
 
-1. **Selective staging**: Run `git status --short` to enumerate ALL changes (staged + unstaged + untracked). Never use `git add -A` or `git add .`. Exclude binary files, generated files (`dist/`, `build/`, `*.generated.*`, `node_modules/`, `__pycache__/`), and sensitive files. Always quote paths: `git add "path/to/file.ts"`. For robust iteration, prefer `git status --porcelain` which is parsing-friendly.
+1. **Selective staging**: Run `git -C "<target_repo>" status --short` to enumerate ALL changes in the selected repository (staged + unstaged + untracked). Never use `git -C "<target_repo>" add -A` or `git -C "<target_repo>" add .`. Exclude binary files, generated files (`dist/`, `build/`, `*.generated.*`, `node_modules/`, `__pycache__/`), and sensitive files. Always quote paths: `git -C "<target_repo>" add "path/to/file.ts"`. For robust iteration, prefer `git -C "<target_repo>" status --porcelain`, which is parsing-friendly.
 2. Show the file list AND the final commit message, ask for final confirmation (both files AND message together)
 3. **Commit with multi-line message**:
-   - **POSIX (Linux/macOS/Git Bash)**: Use multiple `-m` flags: `git commit -m "subject" -m "body paragraph" -m "footer"`
+   - **POSIX (Linux/macOS/Git Bash)**: Use multiple `-m` flags: `git -C "<target_repo>" commit -m "subject" -m "body paragraph" -m "footer"`
    - **PowerShell (Windows)**: Same multi-`-m` approach works. Do NOT embed `\n` in a single `-m` string — PowerShell renders it literally.
-   - **Alternative**: Use a temporary file: `git commit -F /tmp/commit-msg.txt` (POSIX) or `git commit -F $env:TEMP\commit-msg.txt` (PowerShell)
+   - **Alternative**: Use a temporary file: `git -C "<target_repo>" commit -F /tmp/commit-msg.txt` (POSIX) or `git -C "<target_repo>" commit -F $env:TEMP\commit-msg.txt` (PowerShell)
 4. Show result
 
 ### Pre-Commit Hook Failure · 预提交钩子失败
 
-If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
+If `git -C "<target_repo>" commit` fails due to pre-commit hooks (linter, formatter, tests):
 
 1. **Read the hook error output** — parse what failed and why
 2. **Classify the failure** using pattern matching on the hook output:
@@ -387,7 +403,7 @@ If `git commit` fails due to pre-commit hooks (linter, formatter, tests):
    - **Manual**: output contains test failures (`FAIL`, `assertions failed`, `AssertionError`), type errors (`TS[0-9]`, `mypy.*error`, `pyright`), or complex lint rules with no auto-fix flag → show the error output, suggest fixes, ask user to resolve
    - **Infrastructure**: output contains `command not found`, `ModuleNotFoundError`, `cannot execute`, `permission denied`, hook script crash traces → report the issue, don't attempt auto-fix
    - **Unknown**: if the output doesn't clearly match any category → show it to the user and ask "Is this auto-fixable, or should I show the full error?"
-3. **Retry**: After fixing, `git add <fixed-files>` and `git commit` again (max 3 retries)
+3. **Retry**: After fixing, run `git -C "<target_repo>" add <fixed-files>` and `git -C "<target_repo>" commit` again (max 3 retries)
 4. **Give up gracefully**: If hooks keep failing after 3 attempts, report: "Pre-commit hooks still failing after 3 fix attempts. Please resolve manually: <error output>. Re-run pipeline after fixing."
 
 ```

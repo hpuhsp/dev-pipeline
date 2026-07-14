@@ -3,6 +3,16 @@
 All notable changes to the dev-pipeline skill pack are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Route Branch Selection and Commit Execution to the Git repository that owns the reviewed changes instead of the pipeline launch directory.
+- Stop for user selection when changes span multiple repositories; distinguish independent submodules from parent-owned Git subtree paths and exclude stash entries from repository detection.
+
+### Added
+- Dependency-free, change-aware test runner with structural/unit/Agent-eval tiers; Agent evaluation is opt-in to minimize token use.
+- JSON and Markdown test reports covering pass rate, duration, behavioral requirement coverage, scenario coverage, and Agent token cost.
+
 ## [1.4.0] - 2026-07-13
 
 ### Added
