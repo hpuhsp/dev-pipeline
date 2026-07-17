@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Fixed
+
+- Hardened optional CodeGraph detection to require an existing index, an executable CLI, and a healthy `status --json` response before affected-test targeting is enabled; failures now fall back without installing or mutating CodeGraph.
+
 ### Changed
 
 - Added prompt-intent routing so review, test, message, branch, and commit requests execute only their target nodes and minimum safety dependencies instead of falling through the full pipeline.

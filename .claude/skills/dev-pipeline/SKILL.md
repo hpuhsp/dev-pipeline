@@ -108,13 +108,22 @@ Before anything else, understand the project state:
 11. **Repository ownership** — for every reviewed path, resolve its owning worktree with `git -C "<containing-directory>" rev-parse --show-toplevel`, deduplicate the roots, and carry the resulting `changed_repositories` into Phases 4 and 5. A Git subtree without independent `.git` metadata belongs to its parent repository. Do not run `git stash`, inspect `refs/stash`, or include stashed changes in `changed_repositories`.
 12. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
 13. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
-14. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— check if `.codegraph/codegraph.db` exists at the selected repository root. If found, set `codegraph_available = true` for downstream phases. If not found, set `codegraph_available = false` — CodeGraph is an optional enhancement, the pipeline runs identically without it. · 检查选定仓库根目录下 `.codegraph/codegraph.db` 是否存在。存在则标记可用；不存在则跳过，管道照常运行。
-    - POSIX: `test -f .codegraph/codegraph.db`
-    - PowerShell: `Test-Path .codegraph/codegraph.db`
-    - **Never fail the pipeline due to CodeGraph absence** — all downstream usage is conditional with fallback. · CodeGraph 缺失时管道不受影响。
+14. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— default to `codegraph_available = false`. Set it to `true` only when all three checks pass at the selected `target_repo`: an existing index, an executable CLI, and a healthy status response. · 默认不可用；仅当目标仓库索引存在、CLI 可执行且状态健康时才启用。
+    1. **Index exists** · 索引存在:
+       - POSIX: `test -f "<target_repo>/.codegraph/codegraph.db"`
+       - PowerShell: `Test-Path (Join-Path "<target_repo>" ".codegraph/codegraph.db")`
+    2. **CLI is executable** · CLI 可执行:
+       - POSIX: `command -v codegraph >/dev/null 2>&1`
+       - PowerShell: `$null -ne (Get-Command codegraph -ErrorAction SilentlyContinue)`
+    3. **Index status is healthy** · 索引状态健康:
+       - Run `codegraph status --json "<target_repo>"` and require exit code `0`, parseable JSON, and a usable index state.
+       - Treat command errors, invalid JSON, locked/corrupt state, or reported stale/pending data as unavailable.
+    - Set `codegraph_available = true` only if **all three checks pass**. Otherwise keep `codegraph_available = false`, record `codegraph_unavailable_reason` as `index-missing`, `cli-missing`, or `status-unhealthy`, and use normal module/package test scoping.
+    - **Do not install, initialize, or rebuild CodeGraph**. Do not run `codegraph install`, `codegraph init`, `codegraph index`, or `codegraph sync` automatically; availability detection must never modify the target repository or its CodeGraph state.
+    - **Never fail the pipeline due to CodeGraph unavailability** — all downstream usage is conditional with fallback. · CodeGraph 不可用时管道不受影响。
 
-Summarize: how many files changed, what type of change, impact scope, and CodeGraph status (available / not detected).
-汇总告知用户：涉及几个文件、什么类型的变化、影响范围、CodeGraph 状态（可用 / 未检测到）。
+Summarize: how many files changed, what type of change, impact scope, and CodeGraph status (`available`, `index-missing`, `cli-missing`, or `status-unhealthy`).
+汇总告知用户：涉及几个文件、什么类型的变化、影响范围，以及 CodeGraph 的明确状态和不可用原因。
 
 ### Phase 0.5: Scope Drift Detection (optional) · 范围漂移检测
 

@@ -13,6 +13,12 @@
       "tests": ["RepositoryContractTests.test_codegraph_commands_include_staged_changes"]
     },
     {
+      "id": "codegraph-safe-availability-detection",
+      "dimension": "change-detection",
+      "tiers": ["unit", "agent-eval"],
+      "tests": ["RepositoryContractTests.test_codegraph_requires_index_cli_and_healthy_status"]
+    },
+    {
       "id": "branch-convention-detection",
       "dimension": "repository-routing",
       "tiers": ["unit", "agent-eval"],

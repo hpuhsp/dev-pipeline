@@ -161,7 +161,12 @@ git diff HEAD --name-only | codegraph affected --stdin --quiet
 ```
 
 **Integration in dev-pipeline** · 在 dev-pipeline 中的集成:
-- Phase 0: Auto-detect `.codegraph/codegraph.db` → set `codegraph_available` flag · 自动检测
+- Phase 0: Require all of the following before setting `codegraph_available = true` · 启用前必须同时满足：
+  1. `<target_repo>/.codegraph/codegraph.db` exists;
+  2. `command -v codegraph` (POSIX) or `Get-Command codegraph` (PowerShell) succeeds;
+  3. `codegraph status --json "<target_repo>"` exits successfully and returns a healthy, usable index state.
+- If any check fails, record `index-missing`, `cli-missing`, or `status-unhealthy` and fall back to normal module/package scoping.
+- Detection is read-only. Never install, initialize, index, sync, or rebuild CodeGraph automatically.
 - Phase 1: Impacted test files → appended to review agent prompts as context · 审查上下文
 - Phase 2: Impacted test files → targeted regression test execution · 精准回归测试
 

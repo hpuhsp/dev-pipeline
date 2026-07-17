@@ -72,6 +72,25 @@ class RepositoryContractTests(unittest.TestCase):
         )
         self.assertIn("git diff HEAD --name-only | codegraph affected", markdown)
 
+    def test_codegraph_requires_index_cli_and_healthy_status(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        detection = skill.split("**CodeGraph detection (optional)**", 1)[1].split(
+            "Summarize:", 1
+        )[0]
+
+        required_rules = (
+            ".codegraph/codegraph.db",
+            "command -v codegraph",
+            "Get-Command codegraph",
+            "codegraph status --json",
+            "all three checks pass",
+            "codegraph_available = false",
+            "Do not install, initialize, or rebuild CodeGraph",
+        )
+        for rule in required_rules:
+            with self.subTest(rule=rule):
+                self.assertIn(rule, detection)
+
     def test_branch_detection_checks_conventional_fix_prefix(self):
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         detection_line = next(
