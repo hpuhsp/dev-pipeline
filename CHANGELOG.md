@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Fixed
 
 - Hardened optional CodeGraph detection to require an existing index, an executable CLI, and a healthy `status --json` response before affected-test targeting is enabled; failures now fall back without installing or mutating CodeGraph.
+- Made CodeGraph detection and affected-test targeting repository-scoped: submodules require their own index, true subtrees inherit their parent context, and every CodeGraph command now runs from the owning repository root.
 
 ### Changed
 
@@ -21,6 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Added
 - Dependency-free, change-aware test runner with structural/unit/Agent-eval tiers; Agent evaluation is opt-in to minimize token use.
 - JSON and Markdown test reports covering pass rate, duration, behavioral requirement coverage, scenario coverage, and Agent token cost.
+- `scripts/sync_skill.py` to rebuild the portable package and synchronize or verify the configured local Skill copy.
 
 ## [1.4.0] - 2026-07-13
 

@@ -25,14 +25,14 @@ prompt = template
 
 **For Agent 3 only**: Before constructing Agent 3's prompt, read `references/coding-standards.md` and extract ONLY the section matching the detected language/framework. Append this extracted section to Agent 3's prompt as additional context. This avoids loading the full 20KB file into Agent 3's isolated context.
 
-**Step 5 (conditional — CodeGraph)**: If Phase 0 detected CodeGraph (`codegraph_available = true`), run `git diff HEAD --name-only | codegraph affected --stdin --quiet` to identify impacted test files from staged and unstaged changes. Append the output to each agent's prompt as additional context · 如果 Phase 0 检测到 CodeGraph，分析已暂存和未暂存变更，将结果追加到每个 Agent 的 prompt：
+**Step 5 (conditional — CodeGraph, per repository)**: For every Phase 0 `repository_context` whose `codegraph.available = true`, run this command from that context root: `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)`. It identifies tests impacted by that repository's staged and unstaged changes. Append one labelled block for every non-empty result to each agent prompt; never merge paths from different repositories without their root label:
 
 ```
-IMPACTED TESTS (CodeGraph):
+IMPACTED TESTS (CodeGraph, repository: <repository.root>):
 <output of codegraph affected --stdin --quiet>
 ```
 
-If CodeGraph is not available, skip this step entirely. · CodeGraph 不可用时跳过此步骤。
+If CodeGraph is unavailable, fails, or returns no tests for one context, skip only that context. Continue with every other context and with normal review prompts.
 
 ---
 

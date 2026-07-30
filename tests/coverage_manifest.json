@@ -1,6 +1,12 @@
 {
   "requirements": [
     {
+      "id": "skill-portable-frontmatter",
+      "dimension": "skill-design",
+      "tiers": ["unit", "agent-eval"],
+      "tests": ["RepositoryContractTests.test_skill_frontmatter_contains_only_portable_trigger_metadata"]
+    },
+    {
       "id": "prompt-intent-node-routing",
       "dimension": "workflow-routing",
       "tiers": ["unit", "agent-eval"],
@@ -16,7 +22,16 @@
       "id": "codegraph-safe-availability-detection",
       "dimension": "change-detection",
       "tiers": ["unit", "agent-eval"],
-      "tests": ["RepositoryContractTests.test_codegraph_requires_index_cli_and_healthy_status"]
+      "tests": [
+        "RepositoryContractTests.test_codegraph_requires_index_cli_and_healthy_status",
+        "RepositoryContractTests.test_codegraph_is_scoped_to_each_repository_context"
+      ]
+    },
+    {
+      "id": "codegraph-repository-scoped-execution",
+      "dimension": "repository-routing",
+      "tiers": ["unit", "agent-eval"],
+      "tests": ["RepositoryContractTests.test_codegraph_affected_runs_from_owning_repository"]
     },
     {
       "id": "branch-convention-detection",
@@ -34,7 +49,11 @@
       "id": "portable-package-paths",
       "dimension": "packaging",
       "tiers": ["unit", "agent-eval"],
-      "tests": ["RepositoryContractTests.test_packaged_skill_uses_portable_paths"]
+      "tests": [
+        "RepositoryContractTests.test_packaged_skill_uses_portable_paths",
+        "RepositoryContractTests.test_packaged_skill_matches_source_contents",
+        "RepositoryContractTests.test_sync_script_builds_a_portable_matching_package"
+      ]
     },
     {
       "id": "smart-test-selection",

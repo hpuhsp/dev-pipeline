@@ -15,7 +15,7 @@ To approximate the depth of 3-agent parallel review, run 3 independent passes, e
 Score each pass independently (SCORE: X/10), then aggregate at the end.
 每轮结束后独立打分（SCORE: X/10），最后聚合。
 
-> **CodeGraph context (if available)**: If Phase 0 detected CodeGraph (`codegraph_available = true`), run `git diff HEAD --name-only | codegraph affected --stdin --quiet` before starting the review passes. This includes both staged and unstaged changes. Use the impacted test files list to assess whether changes might break existing tests. · CodeGraph 可用时，先分析已暂存和未暂存变更，审查时参考受影响的测试文件列表。
+> **CodeGraph context (per repository, if available)**: For every Phase 0 `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` before the review passes. This includes that repository's staged and unstaged changes. Keep the result repository-relative and labelled by root when assessing whether changes might break existing tests. A failed context never suppresses results from another context.
 
 ## Unified Output Format (aligned with 1A) · 统一输出格式
 

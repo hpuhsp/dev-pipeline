@@ -84,6 +84,14 @@ JSON 与 Markdown 报告包含：测试总数、通过率、耗时、行为需�
 - 分支和提交命令统一使用 `git -C <target_repo>`。
 - 不执行 `git stash`，不读取 `refs/stash`，不分析已 stash 内容。
 
+### 按仓库隔离的 CodeGraph
+
+- 对每个发生变更的 Git worktree 独立检测 CodeGraph，不使用全流程全局可用标记。
+- 仅当本地索引存在、CLI 可执行且状态健康时，才执行受影响测试分析。
+- 始终在同一个仓库根目录中执行 diff、CodeGraph 查询和测试命令。
+- Git Submodule 必须拥有自己的 CodeGraph 索引；真正的 Git Subtree 使用父仓库索引。
+- 单个仓库不可用时仅在该仓库回退，并报告按仓库区分的原因。
+
 ### 安全提交
 
 - 根据真实变更生成 Conventional Commit 信息。
@@ -113,7 +121,7 @@ cp -r dev-pipeline/.claude/skills/dev-pipeline <your-project>/.claude/skills/dev
 cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline
 ```
 
-仓库中的 `dev-pipeline.skill` 是与源码保持同步的便携发布包。
+仓库中的 `dev-pipeline.skill` 是与源码保持同步的便携发布包。修改 Skill 后运行 `python scripts/sync_skill.py`，即可重建发布包并同步本机已配置副本；使用 `--check` 可只验证而不写入。
 
 ## 使用方式
 
@@ -152,6 +160,7 @@ GitHub Actions 使用相同的变更感知验证，并上传 JSON 与 Markdown �
 |   |-- SKILL.md
 |   `-- references/
 |-- scripts/test_runner.py
+|-- scripts/sync_skill.py
 |-- tests/
 |-- docs/superpowers/
 |-- dev-pipeline.skill

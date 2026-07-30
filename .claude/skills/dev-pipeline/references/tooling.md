@@ -154,21 +154,24 @@ CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用
 | `codegraph impact <symbol> --depth N` | Blast radius | Trace impact of a specific symbol · 追踪符号影响范围 |
 | `codegraph callers/callees <symbol>` | Call chain | Trace upstream/downstream dependencies · 追踪上下游调用链 |
 
-**Canonical pipe pattern** · 标准管道模式:
+**Canonical pipe pattern (repository-scoped)** · 标准管道模式（仓库作用域）:
 
 ```bash
-git diff HEAD --name-only | codegraph affected --stdin --quiet
+(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)
 ```
 
+The current directory must be the same repository that owns the diff and `.codegraph` index. Do not run this from a parent repository for a submodule. On PowerShell, use `Push-Location "<repository.root>"; try { git diff HEAD --name-only | codegraph affected --stdin --quiet } finally { Pop-Location }`.
+
 **Integration in dev-pipeline** · 在 dev-pipeline 中的集成:
-- Phase 0: Require all of the following before setting `codegraph_available = true` · 启用前必须同时满足：
-  1. `<target_repo>/.codegraph/codegraph.db` exists;
+- Phase 0: Create one `repository_context` for every changed Git worktree before any CodeGraph check. Require all of the following before setting `repository_context.codegraph.available = true` · 每个变更仓库独立启用前必须同时满足：
+  1. `<repository.root>/.codegraph/codegraph.db` exists;
   2. `command -v codegraph` (POSIX) or `Get-Command codegraph` (PowerShell) succeeds;
-  3. `codegraph status --json "<target_repo>"` exits successfully and returns a healthy, usable index state.
-- If any check fails, record `index-missing`, `cli-missing`, or `status-unhealthy` and fall back to normal module/package scoping.
+  3. `codegraph status --json` executed from `<repository.root>` exits successfully and returns a healthy, usable index state.
+- If any check fails, record `index-missing`, `cli-missing`, or `status-unhealthy` on that context and fall back only for that context.
+- A submodule is an independent context and must have its own index. A subtree without independent Git metadata uses its parent context and parent index.
 - Detection is read-only. Never install, initialize, index, sync, or rebuild CodeGraph automatically.
-- Phase 1: Impacted test files → appended to review agent prompts as context · 审查上下文
-- Phase 2: Impacted test files → targeted regression test execution · 精准回归测试
+- Phase 1: Per-context impacted test files → appended to review agent prompts with repository-root labels · 审查上下文
+- Phase 2: Per-context impacted test files → targeted regression test execution from the same repository root · 精准回归测试
 
 **Install**: See [CodeGraph documentation](https://github.com/colbymchenry/codegraph). The `.codegraph/` directory is local and auto-gitignored. · 安装请参考 CodeGraph 文档，`.codegraph/` 目录为本地索引，自动 gitignore。
 

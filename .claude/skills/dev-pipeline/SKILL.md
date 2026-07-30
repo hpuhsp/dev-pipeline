@@ -1,7 +1,5 @@
 ---
 name: dev-pipeline
-version: 1.5.0
-license: MIT
 description: >
   Intent-routed code delivery nodes for review, unit tests, commit messages, branch selection,
   and commit execution. Use for any one of these actions, any explicit combination, or an
@@ -60,8 +58,8 @@ Route before repository discovery or phase execution. Treat the workflow as comp
 | Route | Typical prompt intent | `target_nodes` | Minimum `supporting_nodes` |
 |------|------------------------|----------------|----------------------------|
 | **Full Pipeline** | “run the complete pipeline”, “review, test, branch and commit everything” | Review → Test → Message → Branch → Commit | Full Phase 0 |
-| **Review Only** | review, audit, inspect problems, code quality | Review | Lightweight Phase 0 diff discovery |
-| **Test Only** | generate/run unit tests, coverage, test report | Test | Lightweight Phase 0 + framework detection |
+| **Review Only** | review, audit, inspect problems, code quality | Review | Lightweight Phase 0 + repository contexts + per-repository CodeGraph discovery |
+| **Test Only** | generate/run unit tests, coverage, test report | Test | Lightweight Phase 0 + repository contexts + per-repository framework and CodeGraph discovery |
 | **Message Only** | write/improve a commit message or changelog | Message | Changed-file summary; diff only when needed |
 | **Branch Only** | create/name/switch a branch | Branch | Repository ownership + current/base branch discovery |
 | **Commit Only** | stage/commit current changes | Commit | Repository ownership + safety checks + Message when no message was supplied |
@@ -75,7 +73,7 @@ Before acting, briefly state the selected route when useful, but do not ask for 
 
 ## Phase 0: Environment Discovery · 环境感知
 
-> **Route check first**: Apply the [Intent Router](#intent-router--意图路由) before discovery. Run full discovery only for Full Pipeline. For a targeted route, execute only the minimum discovery listed in the routing table; do not inspect frameworks, branches, or commit state unless the selected node needs them.
+> **Route check first**: Apply the [Intent Router](#intent-router--意图路由) before discovery. Run full discovery only for Full Pipeline. For a targeted route, execute only the minimum discovery listed in the routing table. Review and Test always require repository contexts; Test detects the framework for each context. Do not inspect branches or commit state unless the selected node needs them.
 
 Before anything else, understand the project state:
 
@@ -104,25 +102,32 @@ Before anything else, understand the project state:
    - Warn: "Large diff detected (N lines). Review quality may degrade."
    - **Auto-fallback**: Force 1B serial review mode (even if Agent tool is available) — serial review is more token-efficient for large diffs and avoids 3× context duplication.
    - If diff > 1000 lines: additionally suggest file-by-file chunked review ("Review 5 files at a time?")
-10. **Guard: submodules** — if `git submodule status` shows submodules, inspect each initialized submodule recursively with repository-scoped commands. Record which repository root owns every reviewed change. A dirty gitlink in the parent is not a direct parent change when the actual edits are inside that submodule.
-11. **Repository ownership** — for every reviewed path, resolve its owning worktree with `git -C "<containing-directory>" rev-parse --show-toplevel`, deduplicate the roots, and carry the resulting `changed_repositories` into Phases 4 and 5. A Git subtree without independent `.git` metadata belongs to its parent repository. Do not run `git stash`, inspect `refs/stash`, or include stashed changes in `changed_repositories`.
+10. **Guard: submodules** — if `git submodule status` shows submodules, inspect each initialized submodule recursively with repository-scoped commands. A dirty gitlink in the parent is metadata, not a direct parent-code change when the actual edits are inside that submodule.
+11. **Build repository contexts before tool detection** — resolve every changed path to its owning worktree with `git -C "<containing-directory>" rev-parse --show-toplevel`; for each initialized submodule, also enumerate its own staged, unstaged, and untracked changes. Deduplicate roots and record one `repository_context` per root:
+    - `root`: absolute worktree root; `kind`: `parent`, `submodule`, or `subtree`.
+    - `changed_paths`: paths relative to that root only; `framework`: detected per repository when Test is selected.
+    - `codegraph`: `{ available, reason, index_root, impacted_tests }`, initially unavailable with an empty test list.
+    - A Git submodule is always an independent context. A Git subtree without independent `.git` metadata is part of the parent context; do not create a false child context for it.
+    - Derive `changed_repositories` from `repository_contexts` for Branch and Commit compatibility. Do not run `git stash`, inspect `refs/stash`, or include stashed content in any context.
 12. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
 13. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
-14. **CodeGraph detection (optional)** · CodeGraph 检测（可选）— default to `codegraph_available = false`. Set it to `true` only when all three checks pass at the selected `target_repo`: an existing index, an executable CLI, and a healthy status response. · 默认不可用；仅当目标仓库索引存在、CLI 可执行且状态健康时才启用。
+14. **CodeGraph detection (optional, per repository)** · CodeGraph 检测（可选，按仓库）— never use a pipeline-global `codegraph_available` flag. For every `repository_context`, set `repository_context.codegraph.available = true` only when all three checks pass at `repository_context.root`: an existing index, an executable CLI, and a healthy status response. · 每个仓库独立判定；不得使用全局可用标记。
     1. **Index exists** · 索引存在:
-       - POSIX: `test -f "<target_repo>/.codegraph/codegraph.db"`
-       - PowerShell: `Test-Path (Join-Path "<target_repo>" ".codegraph/codegraph.db")`
+       - POSIX: `test -f "<repository.root>/.codegraph/codegraph.db"`
+       - PowerShell: `Test-Path (Join-Path "<repository.root>" ".codegraph/codegraph.db")`
     2. **CLI is executable** · CLI 可执行:
        - POSIX: `command -v codegraph >/dev/null 2>&1`
        - PowerShell: `$null -ne (Get-Command codegraph -ErrorAction SilentlyContinue)`
     3. **Index status is healthy** · 索引状态健康:
-       - Run `codegraph status --json "<target_repo>"` and require exit code `0`, parseable JSON, and a usable index state.
+       - Run from the repository root, not the pipeline launch directory. POSIX: `(cd "<repository.root>" && codegraph status --json)`; PowerShell: `Push-Location "<repository.root>"; try { codegraph status --json } finally { Pop-Location }`.
+       - Require exit code `0`, parseable JSON, and a usable index state.
        - Treat command errors, invalid JSON, locked/corrupt state, or reported stale/pending data as unavailable.
-    - Set `codegraph_available = true` only if **all three checks pass**. Otherwise keep `codegraph_available = false`, record `codegraph_unavailable_reason` as `index-missing`, `cli-missing`, or `status-unhealthy`, and use normal module/package test scoping.
+    - Set `repository_context.codegraph.available = true` only if **all three checks pass**. Otherwise record `repository_context.codegraph.reason` as `index-missing`, `cli-missing`, or `status-unhealthy`, and use normal module/package test scoping for that repository.
+    - Never use a parent repository's `.codegraph` index for a submodule. A submodule must have its own healthy index. A subtree uses its parent context and therefore its parent index.
     - **Do not install, initialize, or rebuild CodeGraph**. Do not run `codegraph install`, `codegraph init`, `codegraph index`, or `codegraph sync` automatically; availability detection must never modify the target repository or its CodeGraph state.
     - **Never fail the pipeline due to CodeGraph unavailability** — all downstream usage is conditional with fallback. · CodeGraph 不可用时管道不受影响。
 
-Summarize: how many files changed, what type of change, impact scope, and CodeGraph status (`available`, `index-missing`, `cli-missing`, or `status-unhealthy`).
+Summarize: how many files changed, what type of change, impact scope, and one CodeGraph status row per repository context (`available`, `index-missing`, `cli-missing`, or `status-unhealthy`).
 汇总告知用户：涉及几个文件、什么类型的变化、影响范围，以及 CodeGraph 的明确状态和不可用原因。
 
 ### Phase 0.5: Scope Drift Detection (optional) · 范围漂移检测
@@ -178,7 +183,7 @@ Read `references/review-agents.md` for the complete agent prompts.
 
 Each agent's `prompt` = the corresponding full template from `references/review-agents.md`, with `{git_diff}` replaced by the actual diff output and `{detected_language_framework}` replaced by the detected tech stack string (e.g. "TypeScript React project with Jest").
 
-**CodeGraph context (if available)**: If `codegraph_available = true`, run `git diff HEAD --name-only | codegraph affected --stdin --quiet` to identify impacted test files from both staged and unstaged changes. Append the result to each agent's prompt per Step 5 in `references/review-agents.md`. If the command fails or returns empty, skip — agent prompts work without this context. · CodeGraph 可用时分析已暂存和未暂存变更的受影响文件，并追加到 Agent prompt；失败或为空时跳过。
+**CodeGraph context (per repository, if available)**: For every `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` to identify test files impacted by that repository's staged and unstaged changes. Store the repository-relative result in `repository_context.codegraph.impacted_tests` and append a root-labelled block to each review prompt per Step 5 in `references/review-agents.md`. If a context command fails or returns empty, keep that context's list empty; do not discard results from other repositories.
 
 **Partial failure handling**: If one or two agents fail to return results (timeout, error), proceed with partial results. Note the missing perspective in output: "Agent N unavailable — {dimension} not covered."
 
@@ -241,7 +246,7 @@ When the Agent tool is unavailable, perform review yourself. Read `references/re
 
 Review dimensions in order: Correctness → Security → Performance → Maintainability → Consistency. Output format matches 1A, but source labeled "In-Skill Review".
 
-If `codegraph_available = true`, run `git diff HEAD --name-only | codegraph affected --stdin --quiet` before starting the review and use the impacted test files list as reference context (see `references/review-checklist.md`).
+For every `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` before starting the review and use each root-labelled impacted-test list as reference context (see `references/review-checklist.md`). A failure in one repository must not disable another repository's CodeGraph context.
 
 ---
 
@@ -274,7 +279,7 @@ Rules:
 2. Default unknown files to `unit`; false negatives cost more than a small deterministic test run.
 3. Run Agent evaluation only when explicitly requested, on a scheduled evaluation, or before a release. Record its token budget and actual token use.
 4. If Phase 1 found a correctness/security issue or logic changed, generate targeted tests using the existing framework.
-5. Even when generation is skipped, run affected regression tests when CodeGraph identifies them.
+5. Even when generation is skipped, run affected regression tests when CodeGraph identifies them, independently for each repository context.
 
 ### Principles
 
@@ -302,9 +307,9 @@ Check in priority order:
 - Java/Kotlin: `src/test/java/`, matching package path
 - iOS/Swift: `*Tests.swift` in test target, matching source structure
 
-**Pre-check**: Before running tests, check whether any tests exist: `git ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If the project has zero existing tests, skip the regression check but still run the newly generated test file to verify it passes.
+**Pre-check**: In each repository context, check whether any tests exist: `git -C "<repository.root>" ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If that repository has zero existing tests, skip its regression check but still run any newly generated test file to verify it passes.
 
-**CodeGraph regression targeting (if available)**: If `codegraph_available = true`, use `git diff HEAD --name-only | codegraph affected --stdin --quiet` to identify exactly which existing test files are impacted by staged and unstaged changes. Run those specific files instead of the broader module scoping below. See `references/test-generation.md` for details. · CodeGraph 可用时，分析已暂存和未暂存变更，精准定位需运行的回归测试。
+**CodeGraph regression targeting (per repository, if available)**: For each `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)`. Run that context's specific impacted tests with its detected framework instead of broader module scoping. Run each test command from the same repository root and report results separately. If CodeGraph is unavailable or yields no tests for one context, fall back only for that context. See `references/test-generation.md` for details.
 
 Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
@@ -383,7 +388,7 @@ Present to user for confirmation; user can edit directly.
 ### Steps
 
 1. **Resolve the target repository before inspecting branches**:
-   - Start from the `changed_repositories` recorded in Phase 0 and retain only repositories that own changes selected for this commit.
+   - Start from the `repository_contexts` recorded in Phase 0 and retain only contexts that own changes selected for this commit.
    - A Git submodule is an independent repository. A Git subtree without its own `.git` metadata belongs to the parent repository.
    - Do not run `git stash`, read `refs/stash`, or use stashed content to select a repository.
    - If exactly one repository remains, assign its absolute worktree root to `target_repo`.
@@ -411,7 +416,7 @@ Present to user for confirmation; user can edit directly.
 
 ## Phase 5: Commit Execution · 执行提交
 
-Phase 5 must inherit `target_repo` from Phase 4 when Branch is selected. In Commit Only mode, resolve `target_repo` directly from Phase 0 repository ownership before any mutation. If multiple repositories own selected changes, stop and ask the user to choose one. Every Git command in this phase must use the `git -C "<target_repo>" ...` form, including status, diff, staging, unstaging, and commit operations. Never fall back to the pipeline launch directory.
+Phase 5 must inherit `target_repo` from Phase 4 when Branch is selected. In Commit Only mode, resolve `target_repo` directly from the matching Phase 0 `repository_context` before any mutation. If multiple repositories own selected changes, stop and ask the user to choose one. Every Git command in this phase must use the `git -C "<target_repo>" ...` form, including status, diff, staging, unstaging, and commit operations. Never fall back to the pipeline launch directory.
 
 ### Pre-Commit Checklist
 

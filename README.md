@@ -91,6 +91,14 @@ Ordinary deterministic validation consumes zero Agent-evaluation tokens.
 - Scopes branch and commit commands with `git -C <target_repo>`.
 - Never runs `git stash`, reads `refs/stash`, or analyzes stashed content.
 
+### Repository-scoped CodeGraph
+
+- Detects CodeGraph independently for every changed Git worktree; no pipeline-global availability flag is used.
+- Requires a local index, executable CLI, and healthy status response before it runs affected-test analysis.
+- Runs the diff, CodeGraph query, and test command from the same repository root.
+- Requires each Git submodule to have its own CodeGraph index; a true Git subtree uses its parent repository index.
+- Falls back only for the unavailable repository and reports a per-repository reason.
+
 ### Safe commit delivery
 
 - Generates Conventional Commit messages from the actual change type and scope.
@@ -122,7 +130,7 @@ User-level installation:
 cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline
 ```
 
-The repository also contains `dev-pipeline.skill`, a portable packaged artifact kept in sync with the source by validation.
+The repository also contains `dev-pipeline.skill`, a portable packaged artifact kept in sync with the source by validation. Run `python scripts/sync_skill.py` after changing the Skill to rebuild the package and synchronize the configured local copy; use `--check` to verify both artifacts without writing.
 
 ## Usage
 
@@ -170,6 +178,7 @@ GitHub Actions runs the same change-aware validation and uploads the JSON and Ma
 |       `-- tooling.md
 |-- scripts/
 |   `-- test_runner.py
+|   `-- sync_skill.py
 |-- tests/
 |   |-- coverage_manifest.json
 |   |-- test_repository.py

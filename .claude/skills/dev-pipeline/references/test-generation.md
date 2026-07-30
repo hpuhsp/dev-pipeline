@@ -361,16 +361,16 @@ final class UserServiceTests: XCTestCase {
 
 ### Regression Test Identification · 回归测试识别
 
-**If CodeGraph is available** (`codegraph_available = true`) · CodeGraph 可用时:
+**If CodeGraph is available for a repository context** (`repository_context.codegraph.available = true`) · CodeGraph 可用时:
 
-- Run `git diff HEAD --name-only | codegraph affected --stdin --quiet` to get the precise list of impacted test files from both staged and unstaged changes
-- Run those specific test files to check for regressions:
+- Run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` to get the precise list of tests impacted by that context's staged and unstaged changes.
+- Run those repository-relative test files from the same root to check for regressions:
   - JS/TS: `npx jest --testPathPattern "auth|user"` (or pipe affected files directly)
   - Python: `pytest tests/test_auth.py tests/test_user.py`
   - Java: `mvn test -Dtest=AuthServiceTest,UserServiceTest`
-- This is more precise than module scoping — only tests whose dependencies changed are executed
+- This is more precise than module scoping — only tests whose dependencies changed in that repository are executed. Do not use a parent index or parent diff for a submodule; a true subtree remains in the parent context.
 
-**If CodeGraph is not available** · CodeGraph 不可用时:
+**If CodeGraph is not available for a repository context** · CodeGraph 不可用时:
 
-- Fall back to module/package scoping: `pytest tests/auth/`, `npm test -- --testPathPattern auth`
-- Use `git ls-files '*test*' '*spec*' '*__tests__*'` to discover existing test files in changed areas
+- Fall back only for that context to module/package scoping: `pytest tests/auth/`, `npm test -- --testPathPattern auth`.
+- Use `git -C "<repository.root>" ls-files '*test*' '*spec*' '*__tests__*'` to discover existing test files in its changed areas.
