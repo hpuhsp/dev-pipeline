@@ -98,6 +98,8 @@ Ordinary deterministic validation consumes zero Agent-evaluation tokens.
 - Runs the diff, CodeGraph query, and test command from the same repository root.
 - Requires each Git submodule to have its own CodeGraph index; a true Git subtree uses its parent repository index.
 - Falls back only for the unavailable repository and reports a per-repository reason.
+- Activates CodeGraph only for explicit requests, complex changes, or otherwise broad/slow regression selection; ordinary local changes skip all CodeGraph commands.
+- Requires auditable `affected` evidence after activation before a CodeGraph-enabled review or test can complete; an empty selection and a failed query are recorded distinctly.
 
 ### Safe commit delivery
 
@@ -131,6 +133,8 @@ cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline
 ```
 
 The repository also contains `dev-pipeline.skill`, a portable packaged artifact kept in sync with the source by validation. Run `python scripts/sync_skill.py` after changing the Skill to rebuild the package and synchronize the configured local copy; use `--check` to verify both artifacts without writing.
+
+To validate, commit, push `main`, and fast-forward `origin/master` in one guarded action, run `python scripts/publish_master.py --message "type(scope): summary"`. Use `--dry-run` to inspect the target operation or `--skip-user-skill-sync` when a local Skill sync is intentionally not needed.
 
 ## Usage
 
@@ -179,6 +183,7 @@ GitHub Actions runs the same change-aware validation and uploads the JSON and Ma
 |-- scripts/
 |   `-- test_runner.py
 |   `-- sync_skill.py
+|   `-- publish_master.py
 |-- tests/
 |   |-- coverage_manifest.json
 |   |-- test_repository.py

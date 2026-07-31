@@ -91,6 +91,8 @@ JSON 与 Markdown 报告包含：测试总数、通过率、耗时、行为需�
 - 始终在同一个仓库根目录中执行 diff、CodeGraph 查询和测试命令。
 - Git Submodule 必须拥有自己的 CodeGraph 索引；真正的 Git Subtree 使用父仓库索引。
 - 单个仓库不可用时仅在该仓库回退，并报告按仓库区分的原因。
+- 仅在用户明确要求、复杂改动或回归选择本会过宽/过慢时启用 CodeGraph；普通局部改动不执行任何 CodeGraph 命令。
+- 启用后的审查或测试必须先产生可审计的 `affected` 执行证据；空结果与执行失败会明确区分。
 
 ### 安全提交
 
@@ -122,6 +124,8 @@ cp -r .claude/skills/dev-pipeline ~/.claude/skills/dev-pipeline
 ```
 
 仓库中的 `dev-pipeline.skill` 是与源码保持同步的便携发布包。修改 Skill 后运行 `python scripts/sync_skill.py`，即可重建发布包并同步本机已配置副本；使用 `--check` 可只验证而不写入。
+
+如需一次完成验证、提交、推送 `main` 并快进同步 `origin/master`，运行 `python scripts/publish_master.py --message "type(scope): summary"`。使用 `--dry-run` 仅查看目标操作；无需同步本机 Skill 时可加 `--skip-user-skill-sync`。
 
 ## 使用方式
 
@@ -161,6 +165,7 @@ GitHub Actions 使用相同的变更感知验证，并上传 JSON 与 Markdown �
 |   `-- references/
 |-- scripts/test_runner.py
 |-- scripts/sync_skill.py
+|-- scripts/publish_master.py
 |-- tests/
 |-- docs/superpowers/
 |-- dev-pipeline.skill

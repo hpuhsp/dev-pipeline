@@ -24,7 +24,11 @@ DEFAULT_INSTALLED = (
 
 
 def source_files(source: pathlib.Path) -> list[pathlib.Path]:
-    return sorted(path for path in source.rglob("*") if path.is_file())
+    return sorted(
+        path
+        for path in source.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    )
 
 
 def package_members(source: pathlib.Path) -> list[str]:

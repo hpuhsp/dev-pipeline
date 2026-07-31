@@ -25,14 +25,17 @@ prompt = template
 
 **For Agent 3 only**: Before constructing Agent 3's prompt, read `references/coding-standards.md` and extract ONLY the section matching the detected language/framework. Append this extracted section to Agent 3's prompt as additional context. This avoids loading the full 20KB file into Agent 3's isolated context.
 
-**Step 5 (conditional — CodeGraph, per repository)**: For every Phase 0 `repository_context` whose `codegraph.available = true`, run this command from that context root: `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)`. It identifies tests impacted by that repository's staged and unstaged changes. Append one labelled block for every non-empty result to each agent prompt; never merge paths from different repositories without their root label:
+**Step 5 (conditional gate when CodeGraph is eligible)**: First apply the Phase 0 activation rule. Before constructing any prompt, run `python "<skill-dir>/scripts/codegraph_gate.py" --repository "<repository.root>"` only for every eligible context. Persist the JSON evidence. Do not launch agents while an eligible, available context is `pending` or lacks evidence. Do not invoke CodeGraph for `not-needed` contexts. Append one labelled block for every context where the gate ran, including an empty result or a documented failure; never merge paths from different repositories without their root label:
 
 ```
-IMPACTED TESTS (CodeGraph, repository: <repository.root>):
-<output of codegraph affected --stdin --quiet>
+CODEGRAPH EVIDENCE (repository: <repository.root>):
+- status: available | available + wasm-backend warning
+- affected state: executed | empty | failed
+- cwd / exit code / affected test count: <evidence>
+- impacted tests: <repository-relative paths or []>
 ```
 
-If CodeGraph is unavailable, fails, or returns no tests for one context, skip only that context. Continue with every other context and with normal review prompts.
+If CodeGraph is unavailable, emit its Phase 0 reason and continue normally. If the gate fails, append the error, apply normal review/test fallback only for that repository, and continue with other contexts. `empty` is successful evidence, not a skipped command.
 
 ---
 

@@ -58,8 +58,8 @@ Route before repository discovery or phase execution. Treat the workflow as comp
 | Route | Typical prompt intent | `target_nodes` | Minimum `supporting_nodes` |
 |------|------------------------|----------------|----------------------------|
 | **Full Pipeline** | “run the complete pipeline”, “review, test, branch and commit everything” | Review → Test → Message → Branch → Commit | Full Phase 0 |
-| **Review Only** | review, audit, inspect problems, code quality | Review | Lightweight Phase 0 + repository contexts + per-repository CodeGraph discovery |
-| **Test Only** | generate/run unit tests, coverage, test report | Test | Lightweight Phase 0 + repository contexts + per-repository framework and CodeGraph discovery |
+| **Review Only** | review, audit, inspect problems, code quality | Review | Lightweight Phase 0 + repository contexts; activate optional tools only when eligible |
+| **Test Only** | generate/run unit tests, coverage, test report | Test | Lightweight Phase 0 + per-repository framework detection; activate optional tools only when eligible |
 | **Message Only** | write/improve a commit message or changelog | Message | Changed-file summary; diff only when needed |
 | **Branch Only** | create/name/switch a branch | Branch | Repository ownership + current/base branch discovery |
 | **Commit Only** | stage/commit current changes | Commit | Repository ownership + safety checks + Message when no message was supplied |
@@ -73,7 +73,7 @@ Before acting, briefly state the selected route when useful, but do not ask for 
 
 ## Phase 0: Environment Discovery · 环境感知
 
-> **Route check first**: Apply the [Intent Router](#intent-router--意图路由) before discovery. Run full discovery only for Full Pipeline. For a targeted route, execute only the minimum discovery listed in the routing table. Review and Test always require repository contexts; Test detects the framework for each context. Do not inspect branches or commit state unless the selected node needs them.
+> **Route check first**: Apply the [Intent Router](#intent-router--意图路由) before discovery. Run full discovery only for Full Pipeline. For a targeted route, execute only the minimum discovery listed in the routing table. Review and Test always require repository contexts; Test detects the framework for each context. Defer optional-tool detection until an explicit eligibility rule selects it. Do not inspect branches or commit state unless the selected node needs them.
 
 Before anything else, understand the project state:
 
@@ -106,12 +106,14 @@ Before anything else, understand the project state:
 11. **Build repository contexts before tool detection** — resolve every changed path to its owning worktree with `git -C "<containing-directory>" rev-parse --show-toplevel`; for each initialized submodule, also enumerate its own staged, unstaged, and untracked changes. Deduplicate roots and record one `repository_context` per root:
     - `root`: absolute worktree root; `kind`: `parent`, `submodule`, or `subtree`.
     - `changed_paths`: paths relative to that root only; `framework`: detected per repository when Test is selected.
-    - `codegraph`: `{ available, reason, index_root, impacted_tests }`, initially unavailable with an empty test list.
+    - `codegraph`: `{ eligible, eligibility_reason, available, reason, index_root, backend, warnings, affected }`; initialise as `eligible: false`, `eligibility_reason: not-needed`, `available: unknown`, and an empty affected result. Do not check for CodeGraph here.
     - A Git submodule is always an independent context. A Git subtree without independent `.git` metadata is part of the parent context; do not create a false child context for it.
     - Derive `changed_repositories` from `repository_contexts` for Branch and Commit compatibility. Do not run `git stash`, inspect `refs/stash`, or include stashed content in any context.
 12. **Guard: CLI quoting** — when running git commands on individual files, always quote paths: `git add "path/to/file.ts"`. For robust file iteration: use `git diff --name-only -z` on POSIX (null-separated, handles spaces/newlines in filenames). On PowerShell, skip `-z` (PowerShell's pipeline doesn't handle null bytes well); use `git status --porcelain` piped to `ForEach-Object` instead.
 13. **Guard: Windows long paths** — on Windows, if `git add` silently fails on a valid file, check `git config core.longpaths`. If `false`, suggest: `git config core.longpaths true`.
-14. **CodeGraph detection (optional, per repository)** · CodeGraph 检测（可选，按仓库）— never use a pipeline-global `codegraph_available` flag. For every `repository_context`, set `repository_context.codegraph.available = true` only when all three checks pass at `repository_context.root`: an existing index, an executable CLI, and a healthy status response. · 每个仓库独立判定；不得使用全局可用标记。
+14. **CodeGraph activation (optional, per repository)** · CodeGraph 按需启用（可选，按仓库）— never use a pipeline-global `codegraph_available` flag or detect CodeGraph merely because `.codegraph/` may exist. Set `repository_context.codegraph.eligible = true` only when one of these conditions applies: the user explicitly requests CodeGraph/affected tests/impact analysis; the selected review concerns a cross-module change, public API, route, core service, or unknown bug call chain; or a regression test selection would otherwise be broad, slow, or cross-package. Record the specific `eligibility_reason`.
+    - For ordinary local changes, test-file-only changes, documentation/configuration-only changes, and narrow module tests, keep `eligible: false`; do not run `status`, `affected`, graph exploration, or the gate script.
+    - Once eligible, run the gate below for that repository only. It sets `repository_context.codegraph.available = true` only when all three checks pass: an existing index, an executable CLI, and a healthy status response.
     1. **Index exists** · 索引存在:
        - POSIX: `test -f "<repository.root>/.codegraph/codegraph.db"`
        - PowerShell: `Test-Path (Join-Path "<repository.root>" ".codegraph/codegraph.db")`
@@ -120,15 +122,24 @@ Before anything else, understand the project state:
        - PowerShell: `$null -ne (Get-Command codegraph -ErrorAction SilentlyContinue)`
     3. **Index status is healthy** · 索引状态健康:
        - Run from the repository root, not the pipeline launch directory. POSIX: `(cd "<repository.root>" && codegraph status --json)`; PowerShell: `Push-Location "<repository.root>"; try { codegraph status --json } finally { Pop-Location }`.
-       - Require exit code `0`, parseable JSON, and a usable index state.
+       - Require exit code `0`, parseable JSON, and a usable index state. Record the reported backend. `native` is preferred; `wasm` remains usable but record the `wasm-backend` performance warning instead of disabling CodeGraph.
        - Treat command errors, invalid JSON, locked/corrupt state, or reported stale/pending data as unavailable.
     - Set `repository_context.codegraph.available = true` only if **all three checks pass**. Otherwise record `repository_context.codegraph.reason` as `index-missing`, `cli-missing`, or `status-unhealthy`, and use normal module/package test scoping for that repository.
     - Never use a parent repository's `.codegraph` index for a submodule. A submodule must have its own healthy index. A subtree uses its parent context and therefore its parent index.
     - **Do not install, initialize, or rebuild CodeGraph**. Do not run `codegraph install`, `codegraph init`, `codegraph index`, or `codegraph sync` automatically; availability detection must never modify the target repository or its CodeGraph state.
     - **Never fail the pipeline due to CodeGraph unavailability** — all downstream usage is conditional with fallback. · CodeGraph 不可用时管道不受影响。
 
-Summarize: how many files changed, what type of change, impact scope, and one CodeGraph status row per repository context (`available`, `index-missing`, `cli-missing`, or `status-unhealthy`).
+Summarize: how many files changed, what type of change, impact scope, and CodeGraph activation only for eligible contexts (`not-needed`, `available`, `index-missing`, `cli-missing`, or `status-unhealthy`).
 汇总告知用户：涉及几个文件、什么类型的变化、影响范围，以及 CodeGraph 的明确状态和不可用原因。
+### CodeGraph Execution Gate · CodeGraph 执行门禁
+
+For every Review or Test route, first apply the activation rule above. Only an eligible `repository_context` runs the bundled read-only gate **before** review prompts, review output, or regression-test selection. Run `python "<skill-dir>/scripts/codegraph_gate.py" --repository "<repository.root>"`; it records status, backend, the `git diff HEAD --name-only` input, `codegraph affected --stdin --json` result, exit code, and affected tests.
+
+- Persist the result in `repository_context.codegraph.affected` with state `executed`, `empty`, or `failed`. `empty` is a successful execution with no selected tests; `failed` requires repository-local fallback plus its recorded error.
+- If the context is not eligible, persist `affected.state = not-required` and continue with normal review or module-level testing. This is a complete lightweight path, not a degraded result.
+- If the script cannot run, execute the repository-scoped `affected` command directly and record equivalent `cwd`, command, exit code, and test count. Never infer an empty result without executing it.
+- **Completion invariant**: an eligible context that resolves to `available = true` with missing or `pending` evidence means Review/Test is incomplete. Do not launch review agents, report a completed review, or report a completed test run until every such context has `executed`, `empty`, or documented `failed` evidence.
+- Re-run the gate after any review fix changes a repository before selecting its regression tests. Read `references/tooling.md` for exploration triggers, command selection, and the evidence schema.
 
 ### Phase 0.5: Scope Drift Detection (optional) · 范围漂移检测
 
@@ -183,7 +194,7 @@ Read `references/review-agents.md` for the complete agent prompts.
 
 Each agent's `prompt` = the corresponding full template from `references/review-agents.md`, with `{git_diff}` replaced by the actual diff output and `{detected_language_framework}` replaced by the detected tech stack string (e.g. "TypeScript React project with Jest").
 
-**CodeGraph context (per repository, if available)**: For every `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` to identify test files impacted by that repository's staged and unstaged changes. Store the repository-relative result in `repository_context.codegraph.impacted_tests` and append a root-labelled block to each review prompt per Step 5 in `references/review-agents.md`. If a context command fails or returns empty, keep that context's list empty; do not discard results from other repositories.
+**Optional CodeGraph gate before review**: First apply the activation rule. For each eligible context, satisfy the CodeGraph Execution Gate before constructing prompts. Append its root-labelled evidence and affected-test list to each prompt per Step 5 in `references/review-agents.md`. For a complex change, also run the context or impact exploration selected in `references/tooling.md` before reading broadly; append only its relevant findings. For an ineligible context, use normal lightweight review without CodeGraph.
 
 **Partial failure handling**: If one or two agents fail to return results (timeout, error), proceed with partial results. Note the missing perspective in output: "Agent N unavailable — {dimension} not covered."
 
@@ -246,7 +257,7 @@ When the Agent tool is unavailable, perform review yourself. Read `references/re
 
 Review dimensions in order: Correctness → Security → Performance → Maintainability → Consistency. Output format matches 1A, but source labeled "In-Skill Review".
 
-For every `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` before starting the review and use each root-labelled impacted-test list as reference context (see `references/review-checklist.md`). A failure in one repository must not disable another repository's CodeGraph context.
+Before starting the review, apply the activation rule. For each eligible context, satisfy the CodeGraph Execution Gate and use its root-labelled evidence block plus impacted-test list as reference context (see `references/review-checklist.md`). For an ineligible context, use normal lightweight review. For a complex change, use the context or impact exploration selected in `references/tooling.md` before broad file reads. A failure in one repository must not disable another repository's CodeGraph context.
 
 ---
 
@@ -309,7 +320,7 @@ Check in priority order:
 
 **Pre-check**: In each repository context, check whether any tests exist: `git -C "<repository.root>" ls-files '*test*' '*spec*' '*__tests__*'` (cover JS/TS/Python/Java patterns). If that repository has zero existing tests, skip its regression check but still run any newly generated test file to verify it passes.
 
-**CodeGraph regression targeting (per repository, if available)**: For each `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)`. Run that context's specific impacted tests with its detected framework instead of broader module scoping. Run each test command from the same repository root and report results separately. If CodeGraph is unavailable or yields no tests for one context, fall back only for that context. See `references/test-generation.md` for details.
+**Optional CodeGraph regression targeting (per repository)**: Before selecting regression tests, apply the activation rule. For each eligible context, satisfy the CodeGraph Execution Gate; re-run it if any files changed after review. Run each context's `affected.tests` with its detected framework from the same root instead of broader module scoping. `empty` means no graph-selected existing tests; `failed` or unavailable means fall back only for that context. Ineligible contexts use normal module scoping without CodeGraph. Include gate evidence only when the gate ran. See `references/test-generation.md` for details.
 
 Run affected tests after generation to confirm no regressions AND verify the newly generated tests pass. **Scoping**: Run only tests in the changed module/package (e.g. `pytest tests/auth/`, `npm test -- --testPathPattern auth`), not the full suite. Abort and report if test suite exceeds 2-minute runtime.
 
@@ -486,5 +497,6 @@ If `git -C "<target_repo>" commit` fails due to pre-commit hooks (linter, format
 - `references/review-checklist.md` — In-skill serial review checklist (universal fallback)
 - `references/coding-standards.md` — **Authoritative coding standards**: Alibaba P3C, PEP 8, Airbnb JS, Vue 3, uni-app UTS, Android Kotlin, WCAG, Java 17+
 - `references/tooling.md` — **Recommended static analysis toolchain**: ESLint, Ruff, Checkstyle, detekt, Biome, CodeGraph, and more
+- `scripts/codegraph_gate.py` — **Required CodeGraph evidence gate** for available repositories before Review/Test completion
 - `references/test-generation.md` — Test generation guides for JS/TS/Python/Java/Kotlin
 - `references/commit-conventions.md` — Conventional Commits spec with dual-style branch naming

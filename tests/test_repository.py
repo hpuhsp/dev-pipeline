@@ -89,7 +89,7 @@ class RepositoryContractTests(unittest.TestCase):
 
     def test_codegraph_is_scoped_to_each_repository_context(self):
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        detection = skill.split("**CodeGraph detection (optional, per repository)**", 1)[1].split(
+        detection = skill.split("**CodeGraph activation (optional, per repository)**", 1)[1].split(
             "Summarize:", 1
         )[0]
 
@@ -119,7 +119,7 @@ class RepositoryContractTests(unittest.TestCase):
 
     def test_codegraph_requires_index_cli_and_healthy_status(self):
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-        detection = skill.split("**CodeGraph detection (optional, per repository)**", 1)[1].split(
+        detection = skill.split("**CodeGraph activation (optional, per repository)**", 1)[1].split(
             "Summarize:", 1
         )[0]
 
@@ -138,6 +138,67 @@ class RepositoryContractTests(unittest.TestCase):
         for rule in required_rules:
             with self.subTest(rule=rule):
                 self.assertIn(rule, detection)
+
+    def test_codegraph_wasm_backend_is_a_warning_not_an_availability_failure(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        tooling = (SKILL_ROOT / "references" / "tooling.md").read_text(encoding="utf-8")
+
+        self.assertIn("`wasm` remains usable", skill)
+        self.assertIn("wasm-backend", tooling)
+        self.assertIn("do not classify it as `status-unhealthy`", tooling)
+
+    def test_codegraph_execution_evidence_is_an_eligible_review_and_test_gate(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        review_reference = (SKILL_ROOT / "references" / "review-agents.md").read_text(
+            encoding="utf-8"
+        )
+        test_reference = (SKILL_ROOT / "references" / "test-generation.md").read_text(
+            encoding="utf-8"
+        )
+
+        for rule in (
+            "### CodeGraph Execution Gate",
+            "scripts/codegraph_gate.py",
+            "Completion invariant",
+            "Only an eligible `repository_context` runs",
+            "`executed`, `empty`, or documented `failed` evidence",
+            "Re-run the gate after any review fix",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, skill)
+
+        self.assertIn("eligible, available context is `pending`", review_reference)
+        self.assertIn("eligible context that resolves to `available = true`", skill)
+        self.assertIn("Do not state that CodeGraph ran without this evidence", test_reference)
+
+    def test_codegraph_is_skipped_for_ineligible_lightweight_work(self):
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        tooling = (SKILL_ROOT / "references" / "tooling.md").read_text(encoding="utf-8")
+
+        for rule in (
+            "Do not check for CodeGraph here",
+            "ordinary local changes, test-file-only changes, documentation/configuration-only changes",
+            "do not run `status`, `affected`, graph exploration, or the gate script",
+            "complete lightweight path, not a degraded result",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, skill)
+
+        self.assertIn("For all other changes, record `not-needed` and make no CodeGraph call", tooling)
+
+    def test_codegraph_complex_change_exploration_is_selective_and_bounded(self):
+        tooling = (SKILL_ROOT / "references" / "tooling.md").read_text(encoding="utf-8")
+
+        for rule in (
+            "### Exploration gate for complex changes",
+            'codegraph context "<task>" --max-nodes 30 --max-code 8 --format markdown',
+            "codegraph query <symbol> --limit 10",
+            "codegraph impact <symbol> --depth 2",
+            "cross-module, affects a public API, route, core service, or unknown bug call chain",
+            "do not add graph calls to trivial, local, or documentation-only changes",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, tooling)
 
     def test_branch_detection_checks_conventional_fix_prefix(self):
         skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -191,13 +252,17 @@ class RepositoryContractTests(unittest.TestCase):
         expected = sorted(
             path.relative_to(SKILL_ROOT).as_posix()
             for path in SKILL_ROOT.rglob("*")
-            if path.is_file()
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
         )
         with zipfile.ZipFile(ROOT / "dev-pipeline.skill") as package:
             actual = sorted(entry.filename for entry in package.infolist() if not entry.is_dir())
             self.assertEqual(expected, actual)
             for source in SKILL_ROOT.rglob("*"):
-                if source.is_file():
+                if (
+                    source.is_file()
+                    and "__pycache__" not in source.parts
+                    and source.suffix != ".pyc"
+                ):
                     with self.subTest(path=source):
                         self.assertEqual(
                             source.read_bytes(),

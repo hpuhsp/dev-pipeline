@@ -151,6 +151,8 @@ CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用
 |------|------|------|
 | `codegraph affected --stdin --quiet` | Impacted test files | Pipe `git diff HEAD --name-only` to include staged and unstaged changes; returns bare file paths · 管道传入已暂存和未暂存变更，返回受影响测试文件路径 |
 | `codegraph status --json` | Index health check | Verify `.codegraph/codegraph.db` is fresh · 验证索引状态 |
+| `codegraph context "<task>" --max-nodes 30 --max-code 8 --format markdown` | Task map | Build bounded, relevant context before broad file reads |
+| `codegraph query <symbol> --limit 10` | Symbol lookup | Resolve the changed or suspected symbol before graph traversal |
 | `codegraph impact <symbol> --depth N` | Blast radius | Trace impact of a specific symbol · 追踪符号影响范围 |
 | `codegraph callers/callees <symbol>` | Call chain | Trace upstream/downstream dependencies · 追踪上下游调用链 |
 
@@ -163,15 +165,46 @@ CodeGraph CLI 从项目代码构建代码关系图，支持影响分析和调用
 The current directory must be the same repository that owns the diff and `.codegraph` index. Do not run this from a parent repository for a submodule. On PowerShell, use `Push-Location "<repository.root>"; try { git diff HEAD --name-only | codegraph affected --stdin --quiet } finally { Pop-Location }`.
 
 **Integration in dev-pipeline** · 在 dev-pipeline 中的集成:
-- Phase 0: Create one `repository_context` for every changed Git worktree before any CodeGraph check. Require all of the following before setting `repository_context.codegraph.available = true` · 每个变更仓库独立启用前必须同时满足：
+- Phase 0: Create one `repository_context` for every changed Git worktree, but defer CodeGraph detection. Set `repository_context.codegraph.eligible = true` only for an explicit CodeGraph/affected/impact request, a complex cross-module/API/route/core-service/unknown-call-chain review, or regression selection that would otherwise be broad, slow, or cross-package. For all other changes, record `not-needed` and make no CodeGraph call.
+- For an eligible context only, require all of the following before setting `repository_context.codegraph.available = true` · 每个符合条件的变更仓库独立启用前必须同时满足：
   1. `<repository.root>/.codegraph/codegraph.db` exists;
   2. `command -v codegraph` (POSIX) or `Get-Command codegraph` (PowerShell) succeeds;
   3. `codegraph status --json` executed from `<repository.root>` exits successfully and returns a healthy, usable index state.
 - If any check fails, record `index-missing`, `cli-missing`, or `status-unhealthy` on that context and fall back only for that context.
 - A submodule is an independent context and must have its own index. A subtree without independent Git metadata uses its parent context and parent index.
 - Detection is read-only. Never install, initialize, index, sync, or rebuild CodeGraph automatically.
-- Phase 1: Per-context impacted test files → appended to review agent prompts with repository-root labels · 审查上下文
-- Phase 2: Per-context impacted test files → targeted regression test execution from the same repository root · 精准回归测试
+- `wasm` backend is usable but slower: record `wasm-backend` as a warning; do not classify it as `status-unhealthy` solely for that backend.
+- Phase 1: Per-context gate evidence and impacted test files → appended to review prompts with repository-root labels · 审查上下文
+- Phase 2: Per-context gate evidence and impacted test files → targeted regression test execution from the same repository root · 精准回归测试
+
+### Execution evidence gate
+
+For every eligible repository context in a Review or Test route, run the bundled script before starting work:
+
+```bash
+python "<skill-dir>/scripts/codegraph_gate.py" --repository "<repository.root>"
+```
+
+The script is read-only. It runs `codegraph status --json`, obtains changed paths through `git diff HEAD --name-only`, then runs `codegraph affected --stdin --json` from the same repository root. Persist its JSON result. An `affected.state` of `executed` or `empty` is normal completion; `failed` is valid evidence only when the report includes its error and the pipeline falls back for that repository. Missing or `pending` evidence means the Review/Test phase is not complete only for an eligible, available context. Ineligible contexts must not run the script and are complete with `affected.state = not-required`.
+
+If Python is unavailable, run the canonical quiet command, record its cwd, exit code, and output count, then use the same completion rule. Never claim `empty` without executing a command.
+
+### Exploration gate for complex changes
+
+Use CodeGraph before broad `grep`/read exploration when the change is cross-module, affects a public API, route, core service, or unknown bug call chain. Keep this selective; do not add graph calls to trivial, local, or documentation-only changes.
+
+| Need | First command | Follow-up |
+|---|---|---|
+| Map an unfamiliar task | `codegraph context "<task>" --max-nodes 30 --max-code 8 --format markdown` | Read only source the result does not cover |
+| Resolve a changed symbol | `codegraph query <symbol> --limit 10` | `callers` and/or `callees` |
+| Estimate blast radius | `codegraph impact <symbol> --depth 2` | Add impacted modules/tests to review scope |
+| Trace a known dependency direction | `codegraph callers <symbol>` or `codegraph callees <symbol>` | Inspect only the relevant returned nodes |
+
+Attach a compact `CODEGRAPH EXPLORATION` block with command, root, and relevant findings to the review context. Graph results are a structured starting point, not runtime proof; use normal code review for dynamic dispatch, reflection, generated code, and framework conventions.
+
+### Maintenance and integration boundaries
+
+`codegraph init`, `index`, `sync`, and `index --force` are user-approved maintenance operations, never pipeline actions. MCP server setup and TypeScript API integration are host/platform choices outside this Skill; use them when already configured, but the CLI gate must remain sufficient on every supported Agent.
 
 **Install**: See [CodeGraph documentation](https://github.com/colbymchenry/codegraph). The `.codegraph/` directory is local and auto-gitignored. · 安装请参考 CodeGraph 文档，`.codegraph/` 目录为本地索引，自动 gitignore。
 

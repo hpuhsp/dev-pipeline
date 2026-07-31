@@ -24,14 +24,28 @@
       "tiers": ["unit", "agent-eval"],
       "tests": [
         "RepositoryContractTests.test_codegraph_requires_index_cli_and_healthy_status",
-        "RepositoryContractTests.test_codegraph_is_scoped_to_each_repository_context"
+        "RepositoryContractTests.test_codegraph_is_scoped_to_each_repository_context",
+        "RepositoryContractTests.test_codegraph_wasm_backend_is_a_warning_not_an_availability_failure"
       ]
     },
     {
       "id": "codegraph-repository-scoped-execution",
       "dimension": "repository-routing",
       "tiers": ["unit", "agent-eval"],
-      "tests": ["RepositoryContractTests.test_codegraph_affected_runs_from_owning_repository"]
+      "tests": [
+        "RepositoryContractTests.test_codegraph_affected_runs_from_owning_repository",
+        "RepositoryContractTests.test_codegraph_execution_evidence_is_an_eligible_review_and_test_gate",
+        "RepositoryContractTests.test_codegraph_is_skipped_for_ineligible_lightweight_work",
+        "CodeGraphGateTests.test_wasm_backend_stays_available_with_a_performance_warning",
+        "CodeGraphGateTests.test_empty_affected_result_is_recorded_as_execution_evidence",
+        "CodeGraphGateTests.test_affected_failure_is_recorded_for_repository_local_fallback"
+      ]
+    },
+    {
+      "id": "codegraph-selective-exploration",
+      "dimension": "workflow-routing",
+      "tiers": ["unit", "agent-eval"],
+      "tests": ["RepositoryContractTests.test_codegraph_complex_change_exploration_is_selective_and_bounded"]
     },
     {
       "id": "branch-convention-detection",
@@ -89,6 +103,16 @@
       "dimension": "reporting",
       "tiers": ["unit", "agent-eval"],
       "tests": ["RepositoryContractTests.test_ci_uses_change_aware_runner_and_publishes_reports"]
+    },
+    {
+      "id": "safe-main-master-publishing",
+      "dimension": "release-delivery",
+      "tiers": ["unit", "agent-eval"],
+      "tests": [
+        "PublishMasterTests.test_dry_run_does_not_invoke_mutating_commands",
+        "PublishMasterTests.test_fast_forward_check_rejects_remote_divergence",
+        "PublishMasterTests.test_fast_forward_check_accepts_ancestor"
+      ]
     },
     {
       "id": "skill-test-decision-and-report-contract",

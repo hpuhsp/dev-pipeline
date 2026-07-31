@@ -15,7 +15,7 @@ To approximate the depth of 3-agent parallel review, run 3 independent passes, e
 Score each pass independently (SCORE: X/10), then aggregate at the end.
 每轮结束后独立打分（SCORE: X/10），最后聚合。
 
-> **CodeGraph context (per repository, if available)**: For every Phase 0 `repository_context` whose `codegraph.available = true`, run `(cd "<repository.root>" && git diff HEAD --name-only | codegraph affected --stdin --quiet)` before the review passes. This includes that repository's staged and unstaged changes. Keep the result repository-relative and labelled by root when assessing whether changes might break existing tests. A failed context never suppresses results from another context.
+> **CodeGraph execution gate (eligible repositories only)**: Apply the activation rule first. Run `python "<skill-dir>/scripts/codegraph_gate.py" --repository "<repository.root>"` only for eligible contexts and retain the JSON result. An eligible available context is review-ready only after `affected.state` is `executed`, `empty`, or documented `failed`; `pending` or absent evidence makes that review incomplete. Keep all test paths repository-relative and labelled by root. Ineligible contexts skip CodeGraph entirely and use the normal checklist. A failed context uses local fallback and never suppresses another context.
 
 ## Unified Output Format (aligned with 1A) · 统一输出格式
 
